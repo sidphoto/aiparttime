@@ -9,10 +9,10 @@ export interface GoogleUser {
 const STORAGE_KEY_USER = 'app_google_user';
 const STORAGE_KEY_CLIENT_ID = 'app_google_client_id';
 
-// Default Client ID or fallback
+// Default Client ID from user GCP project ai-worktime-app
 export const DEFAULT_GOOGLE_CLIENT_ID =
   import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-  '1092849503923-g5v8h94mklpq123456789abcdef.apps.googleusercontent.com';
+  '511870531421-gt1terf0h87hqcp0p7oo241480vvk2l6.apps.googleusercontent.com';
 
 export class GoogleAuthManager {
   public static getUser(): GoogleUser | null {
@@ -34,7 +34,11 @@ export class GoogleAuthManager {
   }
 
   public static getClientId(): string {
-    return localStorage.getItem(STORAGE_KEY_CLIENT_ID) || DEFAULT_GOOGLE_CLIENT_ID;
+    const saved = localStorage.getItem(STORAGE_KEY_CLIENT_ID);
+    if (!saved || saved.includes('g5v8h94mklpq123456789abcdef')) {
+      return DEFAULT_GOOGLE_CLIENT_ID;
+    }
+    return saved;
   }
 
   public static setClientId(clientId: string): void {
