@@ -43603,9 +43603,9 @@ var require_event_target = __commonJS({
        *     the listener would be automatically removed when invoked.
        * @public
        */
-      addEventListener(type, handler2, options = {}) {
+      addEventListener(type, handler, options = {}) {
         for (const listener of this.listeners(type)) {
-          if (!options[kForOnEventAttribute] && listener[kListener] === handler2 && !listener[kForOnEventAttribute]) {
+          if (!options[kForOnEventAttribute] && listener[kListener] === handler && !listener[kForOnEventAttribute]) {
             return;
           }
         }
@@ -43616,7 +43616,7 @@ var require_event_target = __commonJS({
               data: isBinary ? data : data.toString()
             });
             event[kTarget] = this;
-            callListener(handler2, this, event);
+            callListener(handler, this, event);
           };
         } else if (type === "close") {
           wrapper = function onClose(code, message) {
@@ -43626,7 +43626,7 @@ var require_event_target = __commonJS({
               wasClean: this._closeFrameReceived && this._closeFrameSent
             });
             event[kTarget] = this;
-            callListener(handler2, this, event);
+            callListener(handler, this, event);
           };
         } else if (type === "error") {
           wrapper = function onError(error) {
@@ -43635,19 +43635,19 @@ var require_event_target = __commonJS({
               message: error.message
             });
             event[kTarget] = this;
-            callListener(handler2, this, event);
+            callListener(handler, this, event);
           };
         } else if (type === "open") {
           wrapper = function onOpen() {
             const event = new Event("open");
             event[kTarget] = this;
-            callListener(handler2, this, event);
+            callListener(handler, this, event);
           };
         } else {
           return;
         }
         wrapper[kForOnEventAttribute] = !!options[kForOnEventAttribute];
-        wrapper[kListener] = handler2;
+        wrapper[kListener] = handler;
         if (options.once) {
           this.once(type, wrapper);
         } else {
@@ -43661,9 +43661,9 @@ var require_event_target = __commonJS({
        * @param {(Function|Object)} handler The listener to remove
        * @public
        */
-      removeEventListener(type, handler2) {
+      removeEventListener(type, handler) {
         for (const listener of this.listeners(type)) {
-          if (listener[kListener] === handler2 && !listener[kForOnEventAttribute]) {
+          if (listener[kListener] === handler && !listener[kForOnEventAttribute]) {
             this.removeListener(type, listener);
             break;
           }
@@ -44304,15 +44304,15 @@ var require_websocket = __commonJS({
           }
           return null;
         },
-        set(handler2) {
+        set(handler) {
           for (const listener of this.listeners(method)) {
             if (listener[kForOnEventAttribute]) {
               this.removeListener(method, listener);
               break;
             }
           }
-          if (typeof handler2 !== "function") return;
-          this.addEventListener(method, handler2, {
+          if (typeof handler !== "function") return;
+          this.addEventListener(method, handler, {
             [kForOnEventAttribute]: true
           });
         }
@@ -67964,7 +67964,7 @@ var init_node = __esm({
 // api/index-entry.ts
 var index_entry_exports = {};
 __export(index_entry_exports, {
-  default: () => handler
+  default: () => index_entry_default
 });
 module.exports = __toCommonJS(index_entry_exports);
 
@@ -68891,9 +68891,7 @@ app.post("/api/analyze-timecard", requireAuthorizedGoogleUser, async (req, res) 
 });
 
 // api/index-entry.ts
-function handler(req, res) {
-  return app(req, res);
-}
+var index_entry_default = app;
 /*! Bundled license information:
 
 depd/index.js:
@@ -69231,3 +69229,4 @@ node-domexception/index.js:
    * g3-prettier-ignore-file
    *)
 */
+module.exports = module.exports.default || module.exports;
