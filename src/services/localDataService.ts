@@ -14,43 +14,13 @@ export class LocalDataService implements IDataService {
 
   async initialize(): Promise<boolean> {
     if (!localStorage.getItem(STORAGE_KEYS.EMPLOYEES)) {
-      localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(defaultEmployees));
+      localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify([]));
     }
-
-    const rawRecs = localStorage.getItem(STORAGE_KEYS.RECOGNITION_RECORDS);
-    if (!rawRecs) {
-      localStorage.setItem(STORAGE_KEYS.RECOGNITION_RECORDS, JSON.stringify(defaultTimecards));
-    } else {
-      try {
-        const parsed: TimecardRecord[] = JSON.parse(rawRecs);
-        const cleaned = parsed.map((r) =>
-          r.status === 'pending' ? { ...r, status: 'verified' as const, verifiedAt: new Date().toLocaleString() } : r
-        );
-        localStorage.setItem(STORAGE_KEYS.RECOGNITION_RECORDS, JSON.stringify(cleaned));
-      } catch {
-        localStorage.setItem(STORAGE_KEYS.RECOGNITION_RECORDS, JSON.stringify(defaultTimecards));
-      }
+    if (!localStorage.getItem(STORAGE_KEYS.RECOGNITION_RECORDS)) {
+      localStorage.setItem(STORAGE_KEYS.RECOGNITION_RECORDS, JSON.stringify([]));
     }
-
-    const rawWork = localStorage.getItem(STORAGE_KEYS.WORK_RECORDS);
-    if (!rawWork) {
-      localStorage.setItem(
-        STORAGE_KEYS.WORK_RECORDS,
-        JSON.stringify(generateInitialDailyWorkRecords())
-      );
-    } else {
-      try {
-        const parsed = JSON.parse(rawWork);
-        const cleaned = parsed.map((r: any) =>
-          r.verification_status === 'pending' ? { ...r, verification_status: 'verified' } : r
-        );
-        localStorage.setItem(STORAGE_KEYS.WORK_RECORDS, JSON.stringify(cleaned));
-      } catch {
-        localStorage.setItem(
-          STORAGE_KEYS.WORK_RECORDS,
-          JSON.stringify(generateInitialDailyWorkRecords())
-        );
-      }
+    if (!localStorage.getItem(STORAGE_KEYS.WORK_RECORDS)) {
+      localStorage.setItem(STORAGE_KEYS.WORK_RECORDS, JSON.stringify([]));
     }
     return true;
   }

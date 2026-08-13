@@ -55,31 +55,34 @@ export default function App() {
     }
   });
 
+  // Auto-purge legacy mock data on update once
+  useEffect(() => {
+    if (!localStorage.getItem('store_data_v3_purged')) {
+      localStorage.removeItem('store_shifts');
+      localStorage.removeItem('store_timecards');
+      localStorage.removeItem('store_daily_records');
+      localStorage.removeItem('store_work_records');
+      localStorage.removeItem('store_recognition_records');
+      localStorage.setItem('store_data_v3_purged', 'true');
+      setShifts([]);
+      setTimecards([]);
+      setDailyRecords([]);
+    }
+  }, []);
+
   const [shifts, setShifts] = useState<ShiftLog[]>(() => {
     const saved = localStorage.getItem('store_shifts');
-    return saved ? JSON.parse(saved) : generateSampleShifts();
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [timecards, setTimecards] = useState<TimecardRecord[]>(() => {
     const saved = localStorage.getItem('store_timecards');
-    if (saved) {
-      try {
-        const parsed: TimecardRecord[] = JSON.parse(saved);
-        return parsed.map((tc) => (tc.status === 'pending' ? { ...tc, status: 'verified' as const } : tc));
-      } catch {}
-    }
-    return defaultTimecards;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [dailyRecords, setDailyRecords] = useState<DailyWorkRecord[]>(() => {
     const saved = localStorage.getItem('store_daily_records');
-    if (saved) {
-      try {
-        const parsed: DailyWorkRecord[] = JSON.parse(saved);
-        return parsed.map((r) => (r.verification_status === 'pending' ? { ...r, verification_status: 'verified' as const } : r));
-      } catch {}
-    }
-    return initialDailyWorkRecords;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [presets, setPresets] = useState<ShiftPreset[]>(() => {
