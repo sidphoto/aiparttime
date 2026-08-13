@@ -2,6 +2,23 @@ export type RoleType = '正職' | '兼職工讀' | '計時人員' | '門市主�
 
 export type VerificationStatus = 'verified' | 'pending' | 'needs_overnight_confirmation' | 'rejected';
 
+/**
+ * Google Sheet 連線狀態（AUTH UX FIX Phase 1）
+ * - disconnected：尚未登入 Google（沒有 Profile）
+ * - needs_reauth：Profile 存在，但 Memory-only Access Token 不存在／已過期（401）
+ * - connecting：正在向 Server 驗證與載入資料
+ * - connected：Token 存在且 Server API 驗證成功
+ * - forbidden：Google 帳號不在 Friends Alpha 允許名單（403）
+ * - error：Server / Sheet 設定異常（500 / 503 等）
+ */
+export type SheetConnectionState =
+  | 'disconnected'
+  | 'needs_reauth'
+  | 'connecting'
+  | 'connected'
+  | 'forbidden'
+  | 'error';
+
 export interface DailyWorkRecord {
   record_id: string;
   employee_id: string;

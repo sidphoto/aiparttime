@@ -4,7 +4,15 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Employee, ShiftLog, ShiftPreset, StoreSettings, TimecardRecord, DailyWorkRecord } from './types';
+import {
+  Employee,
+  ShiftLog,
+  ShiftPreset,
+  StoreSettings,
+  TimecardRecord,
+  DailyWorkRecord,
+  SheetConnectionState,
+} from './types';
 import { defaultSettings, defaultEmployees, defaultPresets, generateSampleShifts, defaultTimecards } from './data/initialData';
 import { initialDailyWorkRecords } from './data/initialDailyRecords';
 import { Header } from './components/Header';
@@ -96,6 +104,10 @@ export default function App() {
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(() => GoogleAuthManager.getUser());
   const [isGoogleLoginOpen, setIsGoogleLoginOpen] = useState(false);
 
+  // Google Sheet 連線狀態（AUTH UX FIX Phase 1）
+  const [sheetConnection, setSheetConnection] = useState<SheetConnectionState>('disconnected');
+  const [sheetStatusMessage, setSheetStatusMessage] = useState<string | null>(null);
+
   // Navigation Tab State: 'home' | 'employees' | 'verify' | 'reports'
   const [activeTab, setActiveTab] = useState<'home' | 'employees' | 'verify' | 'reports'>('home');
 
@@ -108,16 +120,34 @@ export default function App() {
   const [editingShift, setEditingShift] = useState<ShiftLog | null>(null);
   const [defaultShiftDate, setDefaultShiftDate] = useState<string | undefined>(undefined);
 
+  // 中斷連線：Provider 回到 local，並清空正式資料（不得以 localStorage 作為正式資料庫）
+  const resetSheetData = useCallback(() => {
+    dataServiceManager.setProvider('local');
+    setEmployees([]);
+    setDailyRecords([]);
+  }, []);
+
   // Async Data Service Initialization & Data Fetching (TASK 2 & TASK 4)
   const loadDataFromService = useCallback(async () => {
     const token = GoogleAuthService.getAccessToken();
+    // Profile 直接讀 localStorage，避免 logout 時 React state 尚未更新造成狀態誤判
+    const profile = GoogleAuthManager.getUser();
+
     if (!token) {
-      // Memory Token absent -> Reset provider to local/disconnected and clear employees/dailyRecords
-      dataServiceManager.setProvider('local');
-      setEmployees([]);
-      setDailyRecords([]);
+      // AUTH UX FIX Phase 1：Memory Token 不存在時「不自動彈出 OAuth」，只切換 UI 狀態
+      resetSheetData();
+      if (profile) {
+        setSheetConnection('needs_reauth');
+        setSheetStatusMessage('頁面重新整理後 Google 授權已失效（Token 僅存於記憶體），請點「重新連線與整理」重新授權。');
+      } else {
+        setSheetConnection('disconnected');
+        setSheetStatusMessage(null);
+      }
       return;
     }
+
+    setSheetConnection('connecting');
+    setSheetStatusMessage(null);
 
     try {
       await dataServiceManager.initialize();
@@ -146,16 +176,47 @@ export default function App() {
 
       const recogs = await dataServiceManager.getRecognitionRecords();
       if (recogs && recogs.length > 0) setTimecards(recogs);
+
+      setSheetConnection('connected');
+      setSheetStatusMessage(null);
     } catch (err: any) {
       console.warn('Google Sheet connection or fetch failed, provider remains local:', err?.message || err);
-      dataServiceManager.setProvider('local');
-      setEmployees([]);
-      setDailyRecords([]);
+      resetSheetData();
+
+      const status = Number(err?.status) || 0;
+      if (status === 401) {
+        // Token 無效/過期 -> 清除 Memory Token -> 需要重新授權
+        GoogleAuthService.clearAccessToken();
+        setSheetConnection('needs_reauth');
+        setSheetStatusMessage('Google 授權已過期，請點「重新連線與整理」重新授權。');
+      } else if (status === 403) {
+        setSheetConnection('forbidden');
+        setSheetStatusMessage('此 Google 帳號不在 Friends Alpha 測試名單中，請聯絡管理員開通後再試。');
+      } else if (status >= 500) {
+        setSheetConnection('error');
+        setSheetStatusMessage(`伺服器或 Google Sheet 設定異常 (HTTP ${status})，請稍後再試。`);
+      } else {
+        setSheetConnection('error');
+        setSheetStatusMessage(err?.message || 'Google Sheet 連線失敗，請確認網路後再試。');
+      }
     }
-  }, []);
+  }, [resetSheetData]);
 
   useEffect(() => {
     loadDataFromService();
+  }, [loadDataFromService]);
+
+  /**
+   * 「重新連線與整理」唯一入口（AUTH UX FIX Phase 1）
+   * Token 有 -> 直接重新載入；Token 無 -> 由使用者這個明確操作開啟 GoogleLoginModal 重新 OAuth
+   */
+  const handleReconnectAndSync = useCallback(async () => {
+    if (GoogleAuthService.getAccessToken()) {
+      await loadDataFromService();
+      return;
+    }
+    setSheetStatusMessage(null);
+    setIsGoogleLoginOpen(true);
   }, [loadDataFromService]);
 
   // Sync state to LocalStorage
@@ -332,6 +393,11 @@ export default function App() {
       console.warn('[Google Login] OAUTH_ACCESS_TOKEN_MISSING');
       setGoogleUser(user || null);
       setIsGoogleLoginOpen(false);
+      resetSheetData();
+      setSheetConnection(user ? 'needs_reauth' : 'disconnected');
+      setSheetStatusMessage(
+        user ? 'Google 登入未取得 Sheets 授權，請再點一次「重新連線與整理」。' : null
+      );
       return;
     }
 
@@ -372,9 +438,10 @@ export default function App() {
       <main className="flex-1 max-w-lg w-full mx-auto px-4 pt-4 pb-24">
         {/* Google Sheet Sync Status Bar */}
         <GoogleSheetSyncBar
-          googleUser={googleUser}
+          connectionState={sheetConnection}
+          statusMessage={sheetStatusMessage}
           onOpenGoogleLogin={() => setIsGoogleLoginOpen(true)}
-          onSyncCompleted={loadDataFromService}
+          onReconnect={handleReconnectAndSync}
         />
         {activeTab === 'home' && (
           <HomeView
@@ -402,7 +469,7 @@ export default function App() {
             onUpdateEmployee={handleUpdateEmployee}
             onDeleteEmployee={handleDeleteEmployee}
             onUpdateDailyRecord={handleUpdateDailyRecord}
-            onSyncEmployees={loadDataFromService}
+            onSyncEmployees={handleReconnectAndSync}
           />
         )}
 

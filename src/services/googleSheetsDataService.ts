@@ -3,6 +3,20 @@ import { Employee, DailyWorkRecord, TimecardRecord } from '../types';
 import { calculateDailyWorkRecord } from '../utils/calc';
 import { googleSheetsClient, GoogleAuthService } from './googleSheetsClient';
 
+/**
+ * 帶有 HTTP 狀態碼的 API 錯誤，讓 UI 層可區分：
+ * 401 授權過期 / 403 不在允許名單 / 500 · 503 Server 設定問題
+ */
+export class ApiRequestError extends Error {
+  public status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+  }
+}
+
 export class GoogleSheetsDataService implements IDataService {
   providerName = 'google_sheets';
 
@@ -28,7 +42,7 @@ export class GoogleSheetsDataService implements IDataService {
     if (res.status === 401) {
       console.warn('[OAuth Debug] TOKEN_EXPIRED_OR_INVALID (HTTP 401)');
       GoogleAuthService.handle401Error();
-      throw new Error('Google 授權已失效，請點選「連線 Google Sheet」重新授權。');
+      throw new ApiRequestError('Google 授權已失效，請點選「重新連線與整理」重新授權。', 401);
     }
 
     return res;
@@ -88,9 +102,12 @@ export class GoogleSheetsDataService implements IDataService {
     if (!res.ok) {
       const errJson = await res.json().catch(() => ({}));
       if (res.status === 401) {
-        throw new Error('Google 授權已失效，請點選「連線 Google Sheet」重新授權。');
+        throw new ApiRequestError('Google 授權已失效，請點選「重新連線與整理」重新授權。', 401);
       }
-      throw new Error(errJson.error || '無法連接 Google Sheet，請確認 Google 授權與網路連線。');
+      throw new ApiRequestError(
+        errJson.message || errJson.error || '無法連接 Google Sheet，請確認 Google 授權與網路連線。',
+        res.status
+      );
     }
     const json = await res.json();
     const rawList: any[] = json.employees || [];
@@ -235,15 +252,13 @@ export class GoogleSheetsDataService implements IDataService {
   // === 2. Work Records Table Operations (`work_records`) ===
   async getWorkRecords(employeeId?: string, yearMonth?: string): Promise<DailyWorkRecord[]> {
     try {
-      const headers = this.getAuthHeaders();
-      const res = await fetch('/api/work-records', { headers });
+      const res = await this.fetchWithRetry('/api/work-records');
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        if (res.status === 401) {
-          throw new Error('Google 授權已失效，請重新連線 Google Sheet。');
-        }
-        console.warn('Fetch work_records error:', errJson.error || res.statusText);
-        return [];
+        throw new ApiRequestError(
+          errJson.message || errJson.error || `無法讀取 work_records (HTTP ${res.status})`,
+          res.status
+        );
       }
       const data = await res.json();
       let records: DailyWorkRecord[] = data.records || [];
@@ -262,22 +277,17 @@ export class GoogleSheetsDataService implements IDataService {
 
   async saveWorkRecords(recordsToSave: DailyWorkRecord[]): Promise<void> {
     try {
-      const headers = this.getAuthHeaders();
       for (const rec of recordsToSave) {
-        const res = await fetch('/api/work-records', {
+        const res = await this.fetchWithRetry('/api/work-records', {
           method: 'POST',
-          headers: {
-            ...headers,
-            'Content-Type': 'application/json',
-          },
           body: JSON.stringify(rec),
         });
 
         if (!res.ok) {
           const errJson = await res.json().catch(() => ({}));
-          const errMsg = errJson.error || errJson.message || `工時補登失敗 (HTTP ${res.status})`;
+          const errMsg = errJson.message || errJson.error || `工時補登失敗 (HTTP ${res.status})`;
           console.error('Save work_records failed:', errMsg);
-          throw new Error(errMsg);
+          throw new ApiRequestError(errMsg, res.status);
         }
       }
     } catch (err: any) {
