@@ -93,7 +93,7 @@ export class GoogleAuthManager {
 
         const client = google.accounts.oauth2.initTokenClient({
           client_id: clientId,
-          scope: 'openid profile email',
+          scope: 'openid profile email https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly',
           callback: async (response: any) => {
             if (response.error) {
               reject(new Error(response.error_description || response.error || 'Google SSO 授權取消或失敗'));

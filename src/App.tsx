@@ -336,7 +336,11 @@ export default function App() {
       {/* Main Tab View */}
       <main className="flex-1 max-w-lg w-full mx-auto px-4 pt-4 pb-24">
         {/* Google Sheet Sync Status Bar */}
-        <GoogleSheetSyncBar onSyncCompleted={loadDataFromService} />
+        <GoogleSheetSyncBar
+          googleUser={googleUser}
+          onOpenGoogleLogin={() => setIsGoogleLoginOpen(true)}
+          onSyncCompleted={loadDataFromService}
+        />
         {activeTab === 'home' && (
           <HomeView
             selectedMonth={selectedMonth}
