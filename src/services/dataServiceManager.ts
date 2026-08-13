@@ -84,17 +84,17 @@ export class DataServiceManager implements IDataService {
   }
 
   async getWorkRecords(employeeId?: string, yearMonth?: string) {
-    try {
-      return await this.getActiveService().getWorkRecords(employeeId, yearMonth);
-    } catch (err) {
-      console.warn('Google Sheets work records read error, fallback to local:', err);
-      return await this.localService.getWorkRecords(employeeId, yearMonth);
+    if (this.activeProvider === 'google_sheets') {
+      return await this.sheetsService.getWorkRecords(employeeId, yearMonth);
     }
+    return [];
   }
 
   async saveWorkRecords(records: import('../types').DailyWorkRecord[]) {
-    await this.getActiveService().saveWorkRecords(records);
-    await this.localService.saveWorkRecords(records);
+    if (this.activeProvider !== 'google_sheets') {
+      throw new Error('請先連接 Google Sheet，再進行工時補登操作。');
+    }
+    await this.sheetsService.saveWorkRecords(records);
   }
 
   async getRecognitionRecords() {

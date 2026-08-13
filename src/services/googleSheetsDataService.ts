@@ -234,10 +234,57 @@ export class GoogleSheetsDataService implements IDataService {
 
   // === 2. Work Records Table Operations (`work_records`) ===
   async getWorkRecords(employeeId?: string, yearMonth?: string): Promise<DailyWorkRecord[]> {
-    return [];
+    try {
+      const headers = this.getAuthHeaders();
+      const res = await fetch('/api/work-records', { headers });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          throw new Error('Google 授權已失效，請重新連線 Google Sheet。');
+        }
+        console.warn('Fetch work_records error:', errJson.error || res.statusText);
+        return [];
+      }
+      const data = await res.json();
+      let records: DailyWorkRecord[] = data.records || [];
+      if (employeeId) {
+        records = records.filter((r) => r.employee_id === employeeId);
+      }
+      if (yearMonth) {
+        records = records.filter((r) => r.work_date && r.work_date.startsWith(yearMonth));
+      }
+      return records;
+    } catch (err: any) {
+      console.warn('Google Sheets getWorkRecords error:', err?.message || err);
+      throw err;
+    }
   }
 
-  async saveWorkRecords(recordsToSave: DailyWorkRecord[]): Promise<void> {}
+  async saveWorkRecords(recordsToSave: DailyWorkRecord[]): Promise<void> {
+    try {
+      const headers = this.getAuthHeaders();
+      for (const rec of recordsToSave) {
+        const res = await fetch('/api/work-records', {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(rec),
+        });
+
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          const errMsg = errJson.error || errJson.message || `工時補登失敗 (HTTP ${res.status})`;
+          console.error('Save work_records failed:', errMsg);
+          throw new Error(errMsg);
+        }
+      }
+    } catch (err: any) {
+      console.error('Google Sheets saveWorkRecords error:', err?.message || err);
+      throw err;
+    }
+  }
 
   // === 3. Recognition Records Table Operations (`recognition_records`) ===
   async getRecognitionRecords(): Promise<TimecardRecord[]> {

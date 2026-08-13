@@ -595,3 +595,292 @@ export async function syncAllEmployeesToSheet(authHeader?: string): Promise<{ su
 
   return { success: true, syncedCount: newMatrix.length - 1 };
 }
+
+// === WORK RECORDS SHEET OPERATIONS (`work_records`) ===
+
+export interface WorkRecordRow {
+  record_id: string;
+  store_id: string;
+  employee_id: string;
+  work_date: string;
+  clock_in_1: string;
+  clock_out_1: string;
+  clock_in_2: string;
+  clock_out_2: string;
+  period_1_minutes: number;
+  period_2_minutes: number;
+  total_minutes: number;
+  is_overnight_1: boolean;
+  is_overnight_2: boolean;
+  verification_status: string;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const WORK_RECORDS_HEADERS = [
+  'record_id',
+  'store_id',
+  'employee_id',
+  'work_date',
+  'clock_in_1',
+  'clock_out_1',
+  'clock_in_2',
+  'clock_out_2',
+  'period_1_minutes',
+  'period_2_minutes',
+  'total_minutes',
+  'is_overnight_1',
+  'is_overnight_2',
+  'verification_status',
+  'source',
+  'created_at',
+  'updated_at',
+];
+
+/**
+ * Converts "HH:MM" string to minutes from midnight. Returns -1 if invalid.
+ */
+function parseTimeToMinutes(timeStr: string): number {
+  if (!timeStr || !timeStr.includes(':')) return -1;
+  const parts = timeStr.split(':').map(Number);
+  if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return -1;
+  return parts[0] * 60 + parts[1];
+}
+
+/**
+ * Deterministic Server-side calculation for work period minutes
+ */
+function calculatePeriodMinutesServer(
+  clockIn: string,
+  clockOut: string,
+  isOvernight?: boolean
+): { minutes: number; isOvernightCandidate: boolean } {
+  const inM = parseTimeToMinutes(clockIn);
+  const outM = parseTimeToMinutes(clockOut);
+
+  if (inM < 0 || outM < 0) {
+    return { minutes: 0, isOvernightCandidate: false };
+  }
+
+  if (outM < inM || isOvernight) {
+    // Cross-midnight: Add 24h (1440 mins)
+    const minutes = (outM + 1440) - inM;
+    return { minutes: Math.max(0, minutes), isOvernightCandidate: true };
+  } else {
+    return { minutes: Math.max(0, outM - inM), isOvernightCandidate: false };
+  }
+}
+
+export async function getWorkRecordsFromSheet(authHeader?: string): Promise<WorkRecordRow[]> {
+  const spreadsheetId = getSpreadsheetId();
+  const token = authHeader?.replace('Bearer ', '') || process.env.GOOGLE_OAUTH_TOKEN;
+  if (!token) {
+    throw new CustomApiError(401, '未提供 Access Token，無法取得工時紀錄。', 'UNAUTHORIZED');
+  }
+
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/work_records!A1:Q1000`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    if (res.status === 404 || res.status === 400) {
+      return [];
+    }
+    if (res.status === 401) {
+      throw new CustomApiError(401, 'Google 授權已失效，請重新連線 Google Sheet。', 'UNAUTHORIZED');
+    }
+    if (res.status === 403) {
+      throw new CustomApiError(403, 'Google Sheet 存取權限不足，請確認 OAuth 帳號編輯權限。', 'FORBIDDEN');
+    }
+    return [];
+  }
+
+  const json = (await res.json()) as any;
+  const rows: string[][] = json.values || [];
+  if (rows.length <= 1) {
+    return [];
+  }
+
+  const header = rows[0];
+  const recordIdIdx = header.indexOf('record_id');
+  const storeIdIdx = header.indexOf('store_id');
+  const empIdIdx = header.indexOf('employee_id');
+  const dateIdx = header.indexOf('work_date');
+  const in1Idx = header.indexOf('clock_in_1');
+  const out1Idx = header.indexOf('clock_out_1');
+  const in2Idx = header.indexOf('clock_in_2');
+  const out2Idx = header.indexOf('clock_out_2');
+  const p1Idx = header.indexOf('period_1_minutes');
+  const p2Idx = header.indexOf('period_2_minutes');
+  const totalIdx = header.indexOf('total_minutes');
+  const over1Idx = header.indexOf('is_overnight_1');
+  const over2Idx = header.indexOf('is_overnight_2');
+  const statusIdx = header.indexOf('verification_status');
+  const sourceIdx = header.indexOf('source');
+  const createdIdx = header.indexOf('created_at');
+  const updatedIdx = header.indexOf('updated_at');
+
+  const records: WorkRecordRow[] = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.length === 0) continue;
+    const recordId = recordIdIdx !== -1 && r[recordIdIdx] ? r[recordIdIdx] : r[0];
+    if (!recordId) continue;
+
+    const empId = empIdIdx !== -1 && r[empIdIdx] ? r[empIdIdx] : r[2] || '';
+    const workDate = dateIdx !== -1 && r[dateIdx] ? r[dateIdx] : r[3] || '';
+    const clockIn1 = in1Idx !== -1 && r[in1Idx] ? r[in1Idx] : '';
+    const clockOut1 = out1Idx !== -1 && r[out1Idx] ? r[out1Idx] : '';
+    const clockIn2 = in2Idx !== -1 && r[in2Idx] ? r[in2Idx] : '';
+    const clockOut2 = out2Idx !== -1 && r[out2Idx] ? r[out2Idx] : '';
+
+    const p1 = Number(p1Idx !== -1 && r[p1Idx] ? r[p1Idx] : 0);
+    const p2 = Number(p2Idx !== -1 && r[p2Idx] ? r[p2Idx] : 0);
+    const totalM = Number(totalIdx !== -1 && r[totalIdx] ? r[totalIdx] : p1 + p2);
+
+    records.push({
+      record_id: recordId,
+      store_id: storeIdIdx !== -1 && r[storeIdIdx] ? r[storeIdIdx] : 'S001',
+      employee_id: empId,
+      work_date: workDate,
+      clock_in_1: clockIn1,
+      clock_out_1: clockOut1,
+      clock_in_2: clockIn2,
+      clock_out_2: clockOut2,
+      period_1_minutes: isNaN(p1) ? 0 : p1,
+      period_2_minutes: isNaN(p2) ? 0 : p2,
+      total_minutes: isNaN(totalM) ? 0 : totalM,
+      is_overnight_1: over1Idx !== -1 ? r[over1Idx] === 'true' : false,
+      is_overnight_2: over2Idx !== -1 ? r[over2Idx] === 'true' : false,
+      verification_status: statusIdx !== -1 && r[statusIdx] ? r[statusIdx] : 'verified',
+      source: sourceIdx !== -1 && r[sourceIdx] ? r[sourceIdx] : 'manual',
+      created_at: createdIdx !== -1 && r[createdIdx] ? r[createdIdx] : new Date().toISOString(),
+      updated_at: updatedIdx !== -1 && r[updatedIdx] ? r[updatedIdx] : new Date().toISOString(),
+    });
+  }
+
+  return records;
+}
+
+export async function saveWorkRecordToSheet(
+  data: {
+    record_id?: string;
+    employee_id: string;
+    work_date: string;
+    clock_in_1?: string;
+    clock_out_1?: string;
+    clock_in_2?: string;
+    clock_out_2?: string;
+    is_overnight_1?: boolean;
+    is_overnight_2?: boolean;
+    verification_status?: string;
+    source?: string;
+    break_minutes?: number;
+    store_id?: string;
+  },
+  authHeader?: string
+): Promise<WorkRecordRow> {
+  const token = authHeader?.replace('Bearer ', '') || process.env.GOOGLE_OAUTH_TOKEN;
+  if (!token) {
+    throw new CustomApiError(401, '未提供 Access Token，無法儲存工時。', 'UNAUTHORIZED');
+  }
+
+  // 1. INPUT VALIDATION: Check break_minutes
+  if (data.break_minutes !== undefined && data.break_minutes < 0) {
+    throw new CustomApiError(400, '休息時間不能為負數', 'INVALID_BREAK_MINUTES');
+  }
+
+  // 2. INPUT VALIDATION: Validate employee_id exists in employees Sheet
+  const employees = await getEmployeesFromSheet(data.store_id || 'S001', authHeader);
+  const matchedEmp = employees.find(
+    (e) => e.employee_id === data.employee_id || e.name === data.employee_id
+  );
+  if (!matchedEmp && employees.length > 0) {
+    throw new CustomApiError(400, `員工 (${data.employee_id}) 不存在於員工列表中`, 'INVALID_EMPLOYEE');
+  }
+
+  const effectiveEmpId = matchedEmp ? matchedEmp.employee_id : data.employee_id;
+
+  // 3. DETERMINISTIC SERVER-SIDE TIME CALCULATION
+  const in1 = data.clock_in_1 || '';
+  const out1 = data.clock_out_1 || '';
+  const in2 = data.clock_in_2 || '';
+  const out2 = data.clock_out_2 || '';
+
+  const p1Result = calculatePeriodMinutesServer(in1, out1, data.is_overnight_1);
+  const p2Result = calculatePeriodMinutesServer(in2, out2, data.is_overnight_2);
+
+  const breakMins = Math.max(0, Number(data.break_minutes || 0));
+  const rawTotalMinutes = p1Result.minutes + p2Result.minutes;
+  // Ignore client-provided forged work_minutes and recalculate
+  const total_minutes = Math.max(0, rawTotalMinutes - breakMins);
+
+  const record_id = data.record_id || `WR${Date.now()}`;
+  const nowStr = new Date().toISOString();
+
+  // 4. DEDUPLICATION CHECK: Check duplicate employee_id + work_date + clock_in_1 + clock_out_1
+  const existingRecords = await getWorkRecordsFromSheet(authHeader);
+  const duplicate = existingRecords.find(
+    (r) =>
+      r.record_id !== record_id &&
+      r.employee_id === effectiveEmpId &&
+      r.work_date === data.work_date &&
+      r.clock_in_1 === in1 &&
+      r.clock_out_1 === out1
+  );
+
+  if (duplicate) {
+    throw new CustomApiError(
+      409,
+      `已有相同的工時紀錄 (${data.work_date} ${in1}~${out1})，請勿重複提交`,
+      'DUPLICATE_WORK_RECORD'
+    );
+  }
+
+  const recordRow: WorkRecordRow = {
+    record_id,
+    store_id: data.store_id || 'S001',
+    employee_id: effectiveEmpId,
+    work_date: data.work_date,
+    clock_in_1: in1,
+    clock_out_1: out1,
+    clock_in_2: in2,
+    clock_out_2: out2,
+    period_1_minutes: p1Result.minutes,
+    period_2_minutes: p2Result.minutes,
+    total_minutes,
+    is_overnight_1: data.is_overnight_1 ?? p1Result.isOvernightCandidate,
+    is_overnight_2: data.is_overnight_2 ?? p2Result.isOvernightCandidate,
+    verification_status: data.verification_status || 'verified',
+    source: data.source || 'manual',
+    created_at: nowStr,
+    updated_at: nowStr,
+  };
+
+  // Check if updating existing row or appending new row
+  const existingIndex = existingRecords.findIndex((r) => r.record_id === record_id);
+  if (existingIndex !== -1) {
+    await updateSheetRow(
+      'work_records',
+      'record_id',
+      record_id,
+      WORK_RECORDS_HEADERS,
+      recordRow as any,
+      token
+    );
+  } else {
+    await appendSheetRow(
+      'work_records',
+      'work_records!A:Q',
+      WORK_RECORDS_HEADERS,
+      recordRow as any,
+      token
+    );
+  }
+
+  return recordRow;
+}
+

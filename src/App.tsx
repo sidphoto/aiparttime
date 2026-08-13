@@ -79,8 +79,12 @@ export default function App() {
   });
 
   const [dailyRecords, setDailyRecords] = useState<DailyWorkRecord[]>(() => {
-    const saved = localStorage.getItem('store_daily_records');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      localStorage.removeItem('store_daily_records');
+    } catch {
+      // ignore
+    }
+    return [];
   });
 
   const [presets, setPresets] = useState<ShiftPreset[]>(() => {
@@ -108,9 +112,10 @@ export default function App() {
   const loadDataFromService = useCallback(async () => {
     const token = GoogleAuthService.getAccessToken();
     if (!token) {
-      // Memory Token absent -> Reset provider to local/disconnected and clear employees
+      // Memory Token absent -> Reset provider to local/disconnected and clear employees/dailyRecords
       dataServiceManager.setProvider('local');
       setEmployees([]);
+      setDailyRecords([]);
       return;
     }
 
@@ -137,7 +142,7 @@ export default function App() {
       }
 
       const workRecs = await dataServiceManager.getWorkRecords();
-      if (workRecs && workRecs.length > 0) setDailyRecords(workRecs);
+      setDailyRecords(workRecs || []);
 
       const recogs = await dataServiceManager.getRecognitionRecords();
       if (recogs && recogs.length > 0) setTimecards(recogs);
@@ -145,6 +150,7 @@ export default function App() {
       console.warn('Google Sheet connection or fetch failed, provider remains local:', err?.message || err);
       dataServiceManager.setProvider('local');
       setEmployees([]);
+      setDailyRecords([]);
     }
   }, []);
 
@@ -165,9 +171,7 @@ export default function App() {
     localStorage.setItem('store_timecards', JSON.stringify(timecards));
   }, [timecards]);
 
-  useEffect(() => {
-    localStorage.setItem('store_daily_records', JSON.stringify(dailyRecords));
-  }, [dailyRecords]);
+
 
   useEffect(() => {
     localStorage.setItem('store_presets', JSON.stringify(presets));
@@ -307,6 +311,11 @@ export default function App() {
   };
 
   const handleUpdateDailyRecord = async (updatedRecord: DailyWorkRecord) => {
+    if (dataServiceManager.providerName !== 'google_sheets') {
+      throw new Error('請先連接 Google Sheet，再進行工時補登操作。');
+    }
+    // Must save to Google Sheet first! Throws error if failed
+    await dataServiceManager.saveWorkRecords([updatedRecord]);
     setDailyRecords((prev) => {
       const exists = prev.some((r) => r.record_id === updatedRecord.record_id);
       if (exists) {
@@ -314,8 +323,6 @@ export default function App() {
       }
       return [updatedRecord, ...prev];
     });
-
-    await dataServiceManager.saveWorkRecords([updatedRecord]);
   };
 
   return (

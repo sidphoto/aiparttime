@@ -8,6 +8,8 @@ import {
   updateEmployeeInSheet,
   deleteEmployeeInSheet,
   syncAllEmployeesToSheet,
+  getWorkRecordsFromSheet,
+  saveWorkRecordToSheet,
   getSpreadsheetId,
 } from "./server/googleSheetsService";
 
@@ -247,6 +249,52 @@ app.post("/api/leave-requests", requireAuthorizedGoogleUser, async (req, res) =>
 });
 app.post("/api/swap-requests", requireAuthorizedGoogleUser, async (req, res) => {
   return res.json({ success: true, message: "Swap-requests endpoint protected" });
+});
+
+// ==========================================
+// WORK RECORDS GOOGLE SHEET API (PROTECTED)
+// ==========================================
+
+// 1. GET Work Records
+app.get("/api/work-records", requireAuthorizedGoogleUser, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const records = await getWorkRecordsFromSheet(authHeader);
+    return res.json({ success: true, records });
+  } catch (error: any) {
+    console.error("Error fetching work records:", error);
+    return handleRouteError(res, error);
+  }
+});
+
+// 2. POST Save / Add Work Record
+app.post("/api/work-records", requireAuthorizedGoogleUser, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const body = req.body;
+    if (!body.employee_id || !body.work_date) {
+      return res.status(400).json({ error: "缺少 employee_id 或 work_date" });
+    }
+    const savedRecord = await saveWorkRecordToSheet(body, authHeader);
+    return res.json({ success: true, record: savedRecord });
+  } catch (error: any) {
+    console.error("Error saving work record:", error);
+    return handleRouteError(res, error);
+  }
+});
+
+// 3. PUT Update Work Record
+app.put("/api/work-records/:record_id", requireAuthorizedGoogleUser, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const record_id = req.params.record_id;
+    const body = { ...req.body, record_id };
+    const savedRecord = await saveWorkRecordToSheet(body, authHeader);
+    return res.json({ success: true, record: savedRecord });
+  } catch (error: any) {
+    console.error("Error updating work record:", error);
+    return handleRouteError(res, error);
+  }
 });
 
 // TASK 12 — OCR Analyze Timecard (Protected by requireAuthorizedGoogleUser to protect Gemini Quota)
