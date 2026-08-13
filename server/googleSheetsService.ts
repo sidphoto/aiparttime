@@ -41,6 +41,94 @@ export function getSpreadsheetId(): string {
 }
 
 /**
+ * 確保 Worksheet Tab 存在且第一列有表頭。
+ *
+ * Single Spreadsheet Authority：只允許用 addSheet 在既有 Spreadsheet 內補分頁，
+ * 絕不呼叫 spreadsheets.create 另開新檔案。
+ */
+export async function ensureSheetTab(
+  sheetName: string,
+  headers: string[],
+  token: string
+): Promise<void> {
+  const spreadsheetId = getSpreadsheetId();
+
+  const metaRes = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+
+  if (!metaRes.ok) {
+    if (metaRes.status === 401) {
+      throw new CustomApiError(401, 'Google 授權已失效，請重新連線 Google Sheet。', 'UNAUTHORIZED');
+    }
+    if (metaRes.status === 403) {
+      throw new CustomApiError(403, 'Google Sheet 存取權限不足，請確認 OAuth 帳號編輯權限。', 'FORBIDDEN');
+    }
+    const detail = await metaRes.text().catch(() => '');
+    throw new CustomApiError(
+      metaRes.status,
+      `無法讀取 Google Sheet 結構 (${detail.slice(0, 80)})。`
+    );
+  }
+
+  const meta = (await metaRes.json()) as any;
+  const existingTitles: string[] = (meta.sheets || [])
+    .map((s: any) => s?.properties?.title)
+    .filter(Boolean);
+
+  if (!existingTitles.includes(sheetName)) {
+    console.log(`[GoogleSheetsService] Worksheet tab "${sheetName}" 不存在，使用 addSheet 建立。`);
+    const addRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [{ addSheet: { properties: { title: sheetName } } }],
+        }),
+      }
+    );
+    if (!addRes.ok) {
+      const detail = await addRes.text().catch(() => '');
+      throw new CustomApiError(
+        addRes.status,
+        `無法建立 Worksheet 分頁「${sheetName}」(${detail.slice(0, 80)})。`
+      );
+    }
+  }
+
+  // 表頭補寫：涵蓋「剛建立的分頁」與「已存在但整列空白的分頁」
+  const headerRes = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
+      `${sheetName}!1:1`
+    )}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+
+  let needsHeader = true;
+  if (headerRes.ok) {
+    const headerJson = (await headerRes.json()) as any;
+    const firstRow: string[] = headerJson.values?.[0] || [];
+    needsHeader = firstRow.filter((c) => c && String(c).trim()).length === 0;
+  }
+
+  if (needsHeader) {
+    console.log(`[GoogleSheetsService] 為分頁 "${sheetName}" 寫入表頭。`);
+    await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
+        `${sheetName}!A1`
+      )}?valueInputOption=USER_ENTERED`,
+      {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [headers] }),
+      }
+    );
+  }
+}
+
+/**
  * Write row to Google Sheets API v4 using spreadsheets.values.append
  */
 export async function appendSheetRow(
@@ -51,6 +139,10 @@ export async function appendSheetRow(
   token: string
 ) {
   const spreadsheetId = getSpreadsheetId();
+
+  // 寫入前確保分頁與表頭存在，否則 Google 會回 400 Unable to parse range
+  await ensureSheetTab(sheetName, headers, token);
+
   const rowArray = headers.map((h) => (rowData[h] !== undefined && rowData[h] !== null ? String(rowData[h]) : ''));
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED`;
 
