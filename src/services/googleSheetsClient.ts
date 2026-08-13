@@ -12,7 +12,7 @@ export interface SheetTableConfig {
 export const SHEET_SCHEMAS: Record<string, SheetTableConfig> = {
   EMPLOYEES: {
     sheetName: 'employees',
-    headers: ['employee_id', 'store_id', 'name', 'status', 'hire_date', 'note', 'created_at'],
+    headers: ['employee_id', 'store_id', 'name', 'status', 'hire_date', 'note', 'created_at', 'role', 'hourly_rate'],
     keyColumn: 'employee_id',
   },
   WORK_RECORDS: {
@@ -30,6 +30,8 @@ export const SHEET_SCHEMAS: Record<string, SheetTableConfig> = {
       'total_minutes',
       'verification_status',
       'source',
+      'recognition_id',
+      'note',
       'created_at',
       'updated_at',
     ],

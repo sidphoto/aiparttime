@@ -79,9 +79,19 @@ export const GoogleSheetSyncBar: React.FC<GoogleSheetSyncBarProps> = ({
       const fullUrl = `https://docs.google.com/spreadsheets/d/${newSpreadsheetId}/edit`;
 
       // 2. Initialize Header Columns in both tabs
-      // employees headers (7 columns)
-      const empHeaders = ['employee_id', 'store_id', 'name', 'status', 'hire_date', 'note', 'created_at'];
-      // work_records headers (14 columns)
+      // employees headers (9 columns, added role and hourly_rate)
+      const empHeaders = [
+        'employee_id',
+        'store_id',
+        'name',
+        'status',
+        'hire_date',
+        'note',
+        'created_at',
+        'role',
+        'hourly_rate',
+      ];
+      // work_records headers (16 columns, added recognition_id and note)
       const workHeaders = [
         'record_id',
         'employee_id',
@@ -95,12 +105,14 @@ export const GoogleSheetSyncBar: React.FC<GoogleSheetSyncBarProps> = ({
         'total_minutes',
         'verification_status',
         'source',
+        'recognition_id',
+        'note',
         'created_at',
         'updated_at',
       ];
 
       await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${newSpreadsheetId}/values/employees!A1:G1?valueInputOption=RAW`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${newSpreadsheetId}/values/employees!A1:I1?valueInputOption=RAW`,
         {
           method: 'PUT',
           headers: {
@@ -112,7 +124,7 @@ export const GoogleSheetSyncBar: React.FC<GoogleSheetSyncBarProps> = ({
       );
 
       await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${newSpreadsheetId}/values/work_records!A1:N1?valueInputOption=RAW`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${newSpreadsheetId}/values/work_records!A1:P1?valueInputOption=RAW`,
         {
           method: 'PUT',
           headers: {
@@ -130,7 +142,7 @@ export const GoogleSheetSyncBar: React.FC<GoogleSheetSyncBarProps> = ({
       setActiveSpreadsheetId(newSpreadsheetId);
       setIsEditing(false);
 
-      setStatusMessage({ type: 'success', text: `✨ 成功建立新試算表！已寫入 employees (7個欄位) 與 work_records (14個欄位)` });
+      setStatusMessage({ type: 'success', text: `✨ 成功建立新試算表！已寫入 employees (9個欄位) 與 work_records (16個欄位)` });
 
       if (onSyncCompleted) {
         onSyncCompleted();
