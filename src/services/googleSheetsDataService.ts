@@ -53,7 +53,7 @@ export class GoogleSheetsDataService implements IDataService {
       return false;
     }
     try {
-      const res = await this.fetchWithRetry('/api/stores?store_id=S001');
+      const res = await this.fetchWithRetry('/api/stores/S001');
       if (googleSheetsClient.isConnected()) {
         this.syncEmployees().catch((e) => console.warn('Background employee sync error:', e));
       }
@@ -82,10 +82,12 @@ export class GoogleSheetsDataService implements IDataService {
       return { store_id: 'S001', store_name: 'Alpha 門市', owner_name: '店長', status: 'active' };
     }
     try {
-      const res = await this.fetchWithRetry(`/api/stores?store_id=${storeId}`);
+      const res = await this.fetchWithRetry(`/api/stores/${encodeURIComponent(storeId)}`);
       if (res.ok) {
         const json = await res.json();
-        if (json.store) return json.store;
+        // Server 回傳裸物件；同時相容 { store: {...} } 包裝格式
+        const store = json?.store || json;
+        if (store && store.store_id) return store;
       }
     } catch (err) {
       console.warn('Failed to fetch store from server API:', err);
@@ -110,7 +112,8 @@ export class GoogleSheetsDataService implements IDataService {
       );
     }
     const json = await res.json();
-    const rawList: any[] = json.employees || [];
+    // Server 回傳裸陣列；同時相容 { employees: [...] } 包裝格式
+    const rawList: any[] = Array.isArray(json) ? json : json?.employees || [];
 
     const colors = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#ec4899', '#0891b2'];
 
@@ -160,11 +163,12 @@ export class GoogleSheetsDataService implements IDataService {
     }
 
     const json = await res.json();
-    if (!json.success || !json.employee) {
+    // Server 回傳裸物件；同時相容 { success, employee } 包裝格式
+    const r = json?.employee || json;
+    if (!r || !r.employee_id) {
       throw new Error('員工新增失敗，資料尚未寫入 Google Sheet。');
     }
 
-    const r = json.employee;
     const empId = r.employee_id;
 
     return {
@@ -209,7 +213,11 @@ export class GoogleSheetsDataService implements IDataService {
     }
 
     const json = await res.json();
-    const r = json.employee;
+    // Server 回傳裸物件；同時相容 { employee: {...} } 包裝格式
+    const r = json?.employee || json;
+    if (!r || !r.employee_id) {
+      throw new Error('Google Sheet 更新失敗，回應缺少員工資料。');
+    }
 
     return {
       ...updates,
@@ -261,7 +269,8 @@ export class GoogleSheetsDataService implements IDataService {
         );
       }
       const data = await res.json();
-      let records: DailyWorkRecord[] = data.records || [];
+      // Server 回傳裸陣列；同時相容 { records: [...] } 包裝格式
+      let records: DailyWorkRecord[] = Array.isArray(data) ? data : data?.records || [];
       if (employeeId) {
         records = records.filter((r) => r.employee_id === employeeId);
       }
