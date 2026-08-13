@@ -8,7 +8,6 @@ import {
   updateEmployeeInSheet,
   deleteEmployeeInSheet,
   syncAllEmployeesToSheet,
-  appendSheetRow,
   getSpreadsheetId,
 } from "./server/googleSheetsService";
 
@@ -136,50 +135,6 @@ app.delete("/api/employees/:employee_id", async (req, res) => {
   } catch (error: any) {
     return handleRouteError(res, error);
   }
-});
-
-// Minimal Write Test Endpoint for employees!A:G
-app.post("/api/test-sheet-append", async (req, res) => {
-  try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.replace("Bearer ", "") || process.env.GOOGLE_OAUTH_TOKEN;
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        httpStatus: 401,
-        error: "缺少 Google Access Token，請於 APP 點擊「連線 Google Sheet」授權後再試。",
-      });
-    }
-
-    const testEmp = {
-      employee_id: "E001",
-      store_id: "S001",
-      name: "測試員工",
-      status: "active",
-      hire_date: "2026-08-12",
-      note: "APP連線測試",
-      created_at: new Date().toISOString(),
-    };
-
-    const headers = ["employee_id", "store_id", "name", "status", "hire_date", "note", "created_at"];
-    const apiResult = await appendSheetRow("employees", "employees!A:G", headers, testEmp, token);
-
-    return res.json({
-      success: true,
-      httpStatus: 200,
-      testData: testEmp,
-      range: "employees!A:G",
-      spreadsheetId: getSpreadsheetId(),
-      apiResponse: apiResult,
-    });
-  } catch (error: any) {
-    console.error("Error running test sheet append:", error);
-    return handleRouteError(res, error);
-  }
-});
-
-app.post("/api/clean-test-data", async (req, res) => {
-  return res.json({ success: true, message: "無本地快取" });
 });
 
 app.post("/api/analyze-timecard", async (req, res) => {
