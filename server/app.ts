@@ -10,7 +10,7 @@ import {
   getWorkRecordsFromSheet,
   saveWorkRecordToSheet,
   getSpreadsheetId,
-} from "./googleSheetsService";
+} from "./googleSheetsService.js";
 
 dotenv.config();
 
