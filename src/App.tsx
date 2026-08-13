@@ -19,6 +19,8 @@ import { BatchShiftModal } from './components/BatchShiftModal';
 import { LineReportModal } from './components/LineReportModal';
 import { AddEmployeeModal } from './components/AddEmployeeModal';
 import { GoogleSheetSyncBar } from './components/GoogleSheetSyncBar';
+import { GoogleLoginModal } from './components/GoogleLoginModal';
+import { GoogleUser, GoogleAuthManager } from './services/googleAuth';
 import { dataServiceManager } from './services/dataServiceManager';
 import { generateStoreSummary, getPayCyclePeriod } from './utils/calc';
 
@@ -89,6 +91,10 @@ export default function App() {
     const saved = localStorage.getItem('store_presets');
     return saved ? JSON.parse(saved) : defaultPresets;
   });
+
+  // Google User State
+  const [googleUser, setGoogleUser] = useState<GoogleUser | null>(() => GoogleAuthManager.getUser());
+  const [isGoogleLoginOpen, setIsGoogleLoginOpen] = useState(false);
 
   // Navigation Tab State: 'home' | 'employees' | 'verify' | 'reports'
   const [activeTab, setActiveTab] = useState<'home' | 'employees' | 'verify' | 'reports'>('home');
@@ -315,6 +321,12 @@ export default function App() {
       <Header
         settings={settings}
         activeTab={activeTab}
+        googleUser={googleUser}
+        onOpenGoogleLogin={() => setIsGoogleLoginOpen(true)}
+        onGoogleLogout={() => {
+          GoogleAuthManager.logout();
+          setGoogleUser(null);
+        }}
         onOpenAddShift={() => handleOpenAddShift()}
         onOpenAddEmployee={() => setIsAddEmployeeModalOpen(true)}
         onOpenBatchAdd={() => setIsBatchModalOpen(true)}
@@ -441,6 +453,13 @@ export default function App() {
         onAddEmployee={handleAddEmployee}
         settings={settings}
         existingEmployees={employees}
+      />
+
+      {/* Google Account Login Modal */}
+      <GoogleLoginModal
+        isOpen={isGoogleLoginOpen}
+        onClose={() => setIsGoogleLoginOpen(false)}
+        onLoginSuccess={(user) => setGoogleUser(user)}
       />
     </div>
   );
