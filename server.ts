@@ -138,17 +138,104 @@ app.delete("/api/employees/:employee_id", async (req, res) => {
 });
 
 app.post("/api/analyze-timecard", async (req, res) => {
-  return res.json({
-    success: true,
-    isMock: true,
-    detectedName: null,
-    detectedYear: "2026",
-    detectedMonth: "08",
-    days: 22,
-    hours: 182,
-    minutes: 30,
-    note: "考勤卡解析完成",
-  });
+  try {
+    const { imageBase64, mimeType = "image/jpeg" } = req.body;
+
+    // TASK 8 — Security & Input Validation
+    if (!imageBase64 || typeof imageBase64 !== "string") {
+      return res.status(400).json({
+        error: "INVALID_INPUT",
+        message: "請提供有效的打卡卡圖片內容",
+      });
+    }
+
+    const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowedMimeTypes.includes(mimeType.toLowerCase())) {
+      return res.status(400).json({
+        error: "UNSUPPORTED_FORMAT",
+        message: "僅支援 JPEG、PNG、WebP 格式之圖片檔",
+      });
+    }
+
+    // Size limit check (14MB Base64 limit ~ 10MB original image)
+    if (imageBase64.length > 14 * 1024 * 1024) {
+      return res.status(400).json({
+        error: "FILE_TOO_LARGE",
+        message: "圖片檔案大小過大，請選擇 10MB 以下之圖片",
+      });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(400).json({
+        error: "OCR_NOT_CONFIGURED",
+        message: "AI 打卡辨識服務尚未設定，請稍後再試。",
+      });
+    }
+
+    // Try real Gemini AI Vision recognition if Key is available
+    try {
+      const { GoogleGenAI } = await import("@google/genai");
+      const ai = new GoogleGenAI({ apiKey });
+      const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+
+      const prompt = `你是專業的紙本考勤打卡卡 AI 辨識助手。請仔細分析這張打卡卡照片，提取「逐日打卡明細紀錄」，並僅以純 JSON 格式回應：
+{
+  "employee_name": "打卡卡上的員工姓名（若無法辨識請回傳空字串 \"\"）",
+  "records": [
+    {
+      "date": "YYYY-MM-DD",
+      "clock_in": "HH:MM",
+      "clock_out": "HH:MM",
+      "confidence": 0.95,
+      "needs_review": false
+    }
+  ]
+}
+規則：
+1. 若某天的上班或下班時間看不清楚，請不要猜測，並標記 needs_review: true，且 confidence 給予 0.5 以下低分。
+2. 僅回應標準 JSON，不要輸出額外的 Markdown 或說明。`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: {
+          parts: [
+            { inlineData: { mimeType, data: cleanBase64 } },
+            { text: prompt },
+          ],
+        },
+      });
+
+      const text = response.text || "";
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return res.json({
+          success: true,
+          isMock: false,
+          employee_name: parsed.employee_name || "",
+          records: Array.isArray(parsed.records) ? parsed.records : [],
+        });
+      }
+
+      return res.status(500).json({
+        error: "OCR_PARSE_ERROR",
+        message: "辨識結果解析失敗，請重新拍攝清晰打卡卡圖片。",
+      });
+    } catch (aiErr: any) {
+      console.error("[Gemini Vision Error]:", aiErr?.message || aiErr);
+      return res.status(400).json({
+        error: "OCR_NOT_CONFIGURED",
+        message: "AI 辨識服務目前尚未設定或服務暫時不可用，請稍後再試。",
+      });
+    }
+  } catch (error: any) {
+    console.error("Error analyzing timecard:", error);
+    return res.status(500).json({
+      error: "SERVER_ERROR",
+      message: error.message || "處理打卡圖片時發生內部伺服器錯誤",
+    });
+  }
 });
 
 async function startServer() {

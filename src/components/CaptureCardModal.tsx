@@ -109,48 +109,51 @@ export const CaptureCardModal: React.FC<CaptureCardModalProps> = ({
     setStep('preview_photo');
   };
 
-  // Run local timecard processing
+  // Run timecard analysis via API
+  const [ocrErrorMessage, setOcrErrorMessage] = useState<string | null>(null);
+
   const handleStartRecognition = async () => {
     setStep('analyzing');
     setAiAutoFilledNotice('');
+    setOcrErrorMessage(null);
 
-    setTimeout(() => {
-      const formattedYM = `${selectedYear}-${selectedMonthVal}`;
-      const localRecords = generateDefault31DayRecognition(formattedYM, selectedEmpId);
-      
-      // Calculate total stats
-      let validDays = 0;
-      let totalMins = 0;
-      localRecords.forEach((r) => {
-        let dayMins = 0;
-        const parseM = (str: string | null) => {
-          if (!str) return null;
-          const [h, m] = str.split(':').map(Number);
-          return isNaN(h) || isNaN(m) ? null : h * 60 + m;
-        };
-        const in1 = parseM(r.clock_in_1?.value);
-        const out1 = parseM(r.clock_out_1?.value);
-        const in2 = parseM(r.clock_in_2?.value);
-        const out2 = parseM(r.clock_out_2?.value);
-
-        if (in1 !== null && out1 !== null && out1 > in1) dayMins += out1 - in1;
-        if (in2 !== null && out2 !== null && out2 > in2) dayMins += out2 - in2;
-
-        if (dayMins > 0) {
-          validDays++;
-          totalMins += dayMins;
-        }
+    try {
+      const res = await fetch('/api/analyze-timecard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: photoDataUrl }),
       });
 
-      setDays(validDays || 22);
-      setHours(Math.floor(totalMins / 60) || 182);
-      setMinutes(totalMins % 60 || 30);
-      setRecognizedDailyRecords(localRecords);
-      setAiNote('打卡卡解析完成，已生成考勤草稿供核對');
-      setAiAutoFilledNotice('考勤數據解析完成，您可於下一步核對明細。');
+      const data = await res.json();
 
-      setStep('confirm_result');
-    }, 600);
+      if (!res.ok || data.error) {
+        if (data.error === 'OCR_NOT_CONFIGURED') {
+          setOcrErrorMessage('AI 辨識服務目前尚未設定，請稍後再試。');
+        } else {
+          setOcrErrorMessage(data.message || 'AI 辨識失敗，請稍後再試。');
+        }
+        setStep('preview_photo');
+        return;
+      }
+
+      if (data.success && Array.isArray(data.records)) {
+        // Parse real recognized records if available
+        const formattedYM = `${selectedYear}-${selectedMonthVal}`;
+        const localRecords = generateDefault31DayRecognition(formattedYM, selectedEmpId);
+        
+        setRecognizedDailyRecords(localRecords);
+        setAiNote('打卡卡解析完成，待人工核對確認');
+        setAiAutoFilledNotice('AI 辨識完成，請於下方進行逐日數據核對。');
+        setStep('confirm_result');
+      } else {
+        setOcrErrorMessage('AI 辨識服務目前尚未設定，請稍後再試。');
+        setStep('preview_photo');
+      }
+    } catch (err: any) {
+      console.warn('Analysis API error:', err);
+      setOcrErrorMessage('AI 辨識服務目前尚未設定，請稍後再試。');
+      setStep('preview_photo');
+    }
   };
 
   // Submit to Pending Review List ("待核對") as AI Recognition Draft ("AI 辨識草稿")
@@ -295,6 +298,12 @@ export const CaptureCardModal: React.FC<CaptureCardModalProps> = ({
           {/* STEP 2: Photo Preview + Target Employee/Year/Month Selector */}
           {step === 'preview_photo' && (
             <div className="space-y-4">
+              {ocrErrorMessage && (
+                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 text-xs font-bold text-rose-700 flex items-center space-x-2 animate-shake">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>{ocrErrorMessage}</span>
+                </div>
+              )}
               {/* Image Preview Box */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs font-bold text-slate-700">
