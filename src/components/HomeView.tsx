@@ -211,7 +211,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
 
         <div className="divide-y divide-slate-100">
-          {storeSummary.employeeSummaries.map((empSum, idx) => {
+          {storeSummary.employeeSummaries.length === 0 ? (
+            <div className="py-8 text-center text-slate-400 text-xs">
+              目前尚無員工資料，請點擊「新增員工」開始使用
+            </div>
+          ) : (
+            storeSummary.employeeSummaries.map((empSum, idx) => {
             const shortName = empSum.employee.shortName || empSum.employee.name.slice(0, 2);
             const isVerified = empSum.verificationStatus === 'verified' || timecards.some((tc) => tc.employeeId === empSum.employee.id && tc.status === 'verified');
             
@@ -263,7 +268,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </div>
               </div>
             );
-          })}
+          })
+        )}
         </div>
       </div>
     </div>

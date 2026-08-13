@@ -41,7 +41,7 @@ export default function App() {
 
   const [employees, setEmployees] = useState<Employee[]>(() => {
     const saved = localStorage.getItem('store_employees');
-    if (!saved) return defaultEmployees;
+    if (!saved) return [];
     try {
       const parsed: Employee[] = JSON.parse(saved);
       const uniqueMap = new Map<string, Employee>();
@@ -51,7 +51,7 @@ export default function App() {
       });
       return Array.from(uniqueMap.values());
     } catch {
-      return defaultEmployees;
+      return [];
     }
   });
 
