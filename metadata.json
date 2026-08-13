@@ -1,0 +1,1 @@
+{"name":"AI 員工工時統計 APP","description":"專為小型店家設計的手機優先工時統計 APP，支援拍攝紙本打卡卡、待核對管理、員工工時統計與月度報表。","requestFramePermissions":["camera"],"majorCapabilities":["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}
