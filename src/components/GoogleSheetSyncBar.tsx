@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FileSpreadsheet, RefreshCw, Link as LinkIcon, Check, AlertCircle, Sparkles, ExternalLink, PlusCircle } from 'lucide-react';
 import { GoogleUser } from '../services/googleAuth';
+import { GoogleAuthService } from '../services/googleSheetsClient';
 
 interface GoogleSheetSyncBarProps {
   googleUser: GoogleUser | null;
@@ -43,7 +44,7 @@ export const GoogleSheetSyncBar: React.FC<GoogleSheetSyncBarProps> = ({
       return;
     }
 
-    const token = googleUser.accessToken || localStorage.getItem('g_sheets_token');
+    const token = googleUser?.accessToken || GoogleAuthService.getAccessToken();
     if (!token) {
       onOpenGoogleLogin();
       return;
@@ -177,7 +178,7 @@ export const GoogleSheetSyncBar: React.FC<GoogleSheetSyncBarProps> = ({
       localStorage.setItem('user_g_spreadsheet_id', parsedId);
       setActiveSpreadsheetId(parsedId);
 
-      const token = googleUser.accessToken || localStorage.getItem('g_sheets_token');
+      const token = googleUser?.accessToken || GoogleAuthService.getAccessToken();
       if (token) {
         const res = await fetch(
           `https://sheets.googleapis.com/v4/spreadsheets/${parsedId}/values/employees!A1:I100?key=`,

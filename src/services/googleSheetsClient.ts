@@ -58,23 +58,20 @@ export const SPREADSHEET_TITLE = 'AIPT時數統計_資料庫';
 
 export class GoogleAuthService {
   public static getAccessToken(): string | null {
-    return localStorage.getItem('g_sheets_token');
+    return googleSheetsClient.getAccessToken();
   }
 
   public static setAccessToken(token: string): void {
-    localStorage.setItem('g_sheets_token', token);
     googleSheetsClient.setAccessToken(token);
   }
 
   public static clearAccessToken(): void {
-    localStorage.removeItem('g_sheets_token');
-    localStorage.removeItem('g_sheets_id');
     googleSheetsClient.clearAuth();
   }
 
   public static handle401Error(): void {
     this.clearAccessToken();
-    console.warn('[GoogleAuthService] Access Token expired or invalid. Token cleared.');
+    console.warn('[GoogleAuthService] Access Token expired or invalid. Memory token cleared.');
   }
 }
 
@@ -83,12 +80,21 @@ export class GoogleSheetsClient {
   private spreadsheetId: string | null = null;
 
   constructor() {
-    this.accessToken = localStorage.getItem('g_sheets_token') || null;
+    // Memory-only Token Pattern: Never load token from persistent storage
+    this.accessToken = null;
+    // TASK 4: Purge legacy token from localStorage once on startup
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.removeItem('g_sheets_token');
+      }
+    } catch {
+      // Ignore storage access errors
+    }
   }
 
   public setAccessToken(token: string) {
+    // Memory-only: Store token solely in JS runtime memory
     this.accessToken = token;
-    localStorage.setItem('g_sheets_token', token);
   }
 
   public getAccessToken(): string | null {
@@ -110,8 +116,13 @@ export class GoogleSheetsClient {
   public clearAuth() {
     this.accessToken = null;
     this.spreadsheetId = null;
-    localStorage.removeItem('g_sheets_token');
-    localStorage.removeItem('g_sheets_id');
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.removeItem('g_sheets_token');
+      }
+    } catch {
+      // Ignore storage access errors
+    }
   }
 
   /**

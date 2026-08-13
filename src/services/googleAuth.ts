@@ -27,7 +27,9 @@ export class GoogleAuthManager {
 
   public static setUser(user: GoogleUser | null): void {
     if (user) {
-      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
+      // Memory-only Token Pattern: Exclude accessToken before persisting user profile metadata
+      const { accessToken, ...safeUser } = user;
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(safeUser));
     } else {
       localStorage.removeItem(STORAGE_KEY_USER);
     }
