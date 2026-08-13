@@ -52,7 +52,7 @@ export const SHEET_SCHEMAS: Record<string, SheetTableConfig> = {
   },
 };
 
-export const SPREADSHEET_TITLE = '紙本打卡考勤系統_資料庫';
+export const SPREADSHEET_TITLE = 'AIPT時數統計_資料庫';
 
 export class GoogleAuthService {
   public static getAccessToken(): string | null {
