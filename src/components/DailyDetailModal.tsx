@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Clock, AlertTriangle, CheckCircle2, RefreshCw, Save, Calendar, Info } from 'lucide-react';
-import { DailyWorkRecord } from '../types';
+import { DailyWorkRecord, Employee } from '../types';
 import {
   calculateDailyWorkRecord,
   formatMinutesToHoursAndMinutes,
@@ -14,6 +14,8 @@ interface DailyDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (updatedRecord: DailyWorkRecord) => void | Promise<void>;
+  /** 提供時顯示員工選單（Header 快速補登用）；不提供則沿用 record.employee_id */
+  employees?: Employee[];
 }
 
 export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
@@ -22,6 +24,7 @@ export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
   isOpen,
   onClose,
   onSave,
+  employees,
 }) => {
   const [clockIn1, setClockIn1] = useState(record.clock_in_1 || '');
   const [clockOut1, setClockOut1] = useState(record.clock_out_1 || '');
@@ -31,11 +34,15 @@ export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
   const [isOvernight2, setIsOvernight2] = useState(record.is_overnight_2 ?? false);
   const [status, setStatus] = useState(record.verification_status);
   const [workDate, setWorkDate] = useState(record.work_date);
+  const [employeeId, setEmployeeId] = useState(record.employee_id);
   const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Sync state when record prop changes
   useEffect(() => {
     setWorkDate(record.work_date);
+    setEmployeeId(record.employee_id);
+    setErrorMessage(null);
     setClockIn1(record.clock_in_1 || '');
     setClockOut1(record.clock_out_1 || '');
     setClockIn2(record.clock_in_2 || '');
@@ -50,6 +57,7 @@ export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
   // Real-time calculation of daily work record in minutes
   const computedRecord = calculateDailyWorkRecord({
     ...record,
+    employee_id: employeeId,
     work_date: workDate,
     clock_in_1: clockIn1,
     clock_out_1: clockOut1,
@@ -72,8 +80,20 @@ export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
 
   const handleSave = async () => {
     if (isSaving) return;
+    setErrorMessage(null);
+
+    if (!employeeId) {
+      setErrorMessage('請先選擇員工。');
+      return;
+    }
+    if (!workDate) {
+      setErrorMessage('請先選擇工作日期。');
+      return;
+    }
+
     const finalRec: DailyWorkRecord = {
       ...computedRecord,
+      employee_id: employeeId,
       work_date: workDate,
       verification_status: isOvernightCandidate ? 'needs_overnight_confirmation' : status,
       updated_at: new Date().toISOString(),
@@ -83,8 +103,9 @@ export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
     try {
       // 等待實際寫入 Google Sheet；成功時由父層關閉 Modal
       await onSave(finalRec);
-    } catch {
-      // 錯誤已由父層以 Toast 呈現，這裡保留 Modal 讓使用者修正後重試
+    } catch (err: any) {
+      // 保留 Modal 並顯示 Server 實際錯誤，讓使用者修正後重試
+      setErrorMessage(err?.message || '工時寫入失敗，請稍後再試。');
     } finally {
       setIsSaving(false);
     }
@@ -118,6 +139,42 @@ export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
 
         {/* Form Body */}
         <div className="p-5 overflow-y-auto space-y-4">
+          {/* 寫入失敗時顯示 Server 實際錯誤 */}
+          {errorMessage && (
+            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 flex items-start space-x-2.5 text-xs">
+              <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+              <div className="leading-relaxed font-bold text-rose-700">{errorMessage}</div>
+            </div>
+          )}
+
+          {/* 員工選單（Header 快速補登時提供） */}
+          {employees && employees.length > 0 && (
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1.5">
+              <label
+                htmlFor="work-employee-select"
+                className="text-xs font-black text-slate-700"
+              >
+                補登對象
+              </label>
+              <select
+                id="work-employee-select"
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">請選擇員工</option>
+                {employees.map((emp) => {
+                  const empId = emp.employee_id || emp.id;
+                  return (
+                    <option key={empId} value={empId}>
+                      {emp.name}（{empId}）
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+
           {/* 工作日期（補登過往工時時必須可以指定） */}
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1.5">
             <label

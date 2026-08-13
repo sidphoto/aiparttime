@@ -31,7 +31,8 @@ import { GoogleLoginModal } from './components/GoogleLoginModal';
 import { GoogleUser, GoogleAuthManager } from './services/googleAuth';
 import { GoogleAuthService } from './services/googleSheetsClient';
 import { dataServiceManager } from './services/dataServiceManager';
-import { generateStoreSummary, getPayCyclePeriod } from './utils/calc';
+import { DailyDetailModal } from './components/DailyDetailModal';
+import { generateStoreSummary, getPayCyclePeriod, calculateDailyWorkRecord } from './utils/calc';
 
 export default function App() {
   // LocalStorage state initialization
@@ -119,6 +120,8 @@ export default function App() {
   const [isAddEmployeeModalOpen, setIsAddEmployeeModalOpen] = useState(false);
   const [editingShift, setEditingShift] = useState<ShiftLog | null>(null);
   const [defaultShiftDate, setDefaultShiftDate] = useState<string | undefined>(undefined);
+  // Header 快速補登：草稿存 state，避免每次 render 產生新物件導致 Modal 內狀態被重置
+  const [quickRecordDraft, setQuickRecordDraft] = useState<DailyWorkRecord | null>(null);
 
   // 中斷連線：Provider 回到 local，並清空正式資料（不得以 localStorage 作為正式資料庫）
   const resetSheetData = useCallback(() => {
@@ -428,7 +431,19 @@ export default function App() {
           setGoogleUser(null);
           loadDataFromService();
         }}
-        onOpenAddShift={() => handleOpenAddShift()}
+        onOpenAddShift={() => {
+          // 補登必須寫入 work_records（Google Sheet），不可再走 ShiftLog / localStorage
+          setQuickRecordDraft(
+            calculateDailyWorkRecord({
+              employee_id: '',
+              work_date: new Date().toISOString().split('T')[0],
+              clock_in_1: '09:00',
+              clock_out_1: '18:00',
+              verification_status: 'verified',
+              source: 'manual',
+            })
+          );
+        }}
         onOpenAddEmployee={() => setIsAddEmployeeModalOpen(true)}
         onOpenBatchAdd={() => setIsBatchModalOpen(true)}
         onUpdateStoreName={(newName) => setSettings((prev) => ({ ...prev, storeName: newName }))}
@@ -560,6 +575,21 @@ export default function App() {
         settings={settings}
         existingEmployees={employees}
       />
+
+      {/* Header 快速補登工時 -> 寫入 work_records */}
+      {quickRecordDraft && (
+        <DailyDetailModal
+          isOpen
+          record={quickRecordDraft}
+          employees={employees}
+          employeeName="補登工時"
+          onClose={() => setQuickRecordDraft(null)}
+          onSave={async (rec) => {
+            await handleUpdateDailyRecord(rec);
+            setQuickRecordDraft(null);
+          }}
+        />
+      )}
 
       {/* Google Account Login Modal */}
       <GoogleLoginModal
