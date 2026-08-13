@@ -30,7 +30,7 @@ export function generateInitialDailyWorkRecords(): DailyWorkRecord[] {
     if (spec) {
       const rec = calculateDailyWorkRecord({
         record_id: `rec-emp1-${d}`,
-        employee_id: 'emp-1',
+        employee_id: 'E001',
         work_date,
         clock_in_1: spec.c1,
         clock_out_1: spec.o1,
@@ -61,7 +61,7 @@ export function generateInitialDailyWorkRecords(): DailyWorkRecord[] {
 
       const rec = calculateDailyWorkRecord({
         record_id: `rec-emp1-${d}`,
-        employee_id: 'emp-1',
+        employee_id: 'E001',
         work_date,
         clock_in_1: `${startH}:${startMin}`,
         clock_out_1: `${endH}:${endMin}`,
@@ -75,8 +75,8 @@ export function generateInitialDailyWorkRecords(): DailyWorkRecord[] {
     }
   }
 
-  // 2. 林雅婷 (ANH) - emp-2
-  // Target: 26 days, total_minutes = 13300 (221時40分), 2 pending records
+  // 2. 林雅婷 (ANH) - E002
+  // Target: 26 days, total_minutes = 13300 (221時40分)
   let anhSum = 0;
   for (let d = 1; d <= 26; d++) {
     const dayStr = String(d).padStart(2, '0');
@@ -92,12 +92,11 @@ export function generateInitialDailyWorkRecords(): DailyWorkRecord[] {
     const endH = String(Math.floor(endM / 60) % 24).padStart(2, '0');
     const endMin = String(endM % 60).padStart(2, '0');
 
-    // Make all records verified by default
     const status = 'verified';
 
     const rec = calculateDailyWorkRecord({
       record_id: `rec-emp2-${d}`,
-      employee_id: 'emp-2',
+      employee_id: 'E002',
       work_date,
       clock_in_1: `${startH}:${startMin}`,
       clock_out_1: `${endH}:${endMin}`,
@@ -110,8 +109,8 @@ export function generateInitialDailyWorkRecords(): DailyWorkRecord[] {
     records.push(rec);
   }
 
-  // 3. 張偉傑 (HOA) - emp-3
-  // Target: 25 days, total_minutes = 12552 (209時12分), 0 pending
+  // 3. 張偉傑 (HOA) - E003
+  // Target: 25 days, total_minutes = 12552 (209時12分)
   let hoaSum = 0;
   for (let d = 1; d <= 25; d++) {
     const dayStr = String(d).padStart(2, '0');
@@ -129,7 +128,7 @@ export function generateInitialDailyWorkRecords(): DailyWorkRecord[] {
 
     const rec = calculateDailyWorkRecord({
       record_id: `rec-emp3-${d}`,
-      employee_id: 'emp-3',
+      employee_id: 'E003',
       work_date,
       clock_in_1: `${startH}:${startMin}`,
       clock_out_1: `${endH}:${endMin}`,
@@ -139,23 +138,6 @@ export function generateInitialDailyWorkRecords(): DailyWorkRecord[] {
       source: 'photo_ai',
     });
     hoaSum += rec.total_minutes;
-    records.push(rec);
-  }
-
-  // 4. 許家瑋 (瑋) - emp-4
-  // Target: 18 days
-  for (let d = 1; d <= 18; d++) {
-    const dayStr = String(d).padStart(2, '0');
-    const work_date = `2026-08-${dayStr}`;
-    const rec = calculateDailyWorkRecord({
-      record_id: `rec-emp4-${d}`,
-      employee_id: 'emp-4',
-      work_date,
-      clock_in_1: '18:00',
-      clock_out_1: '23:00',
-      verification_status: 'verified',
-      source: 'photo_ai',
-    });
     records.push(rec);
   }
 

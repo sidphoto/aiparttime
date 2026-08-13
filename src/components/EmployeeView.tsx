@@ -243,34 +243,7 @@ export const EmployeeView: React.FC<EmployeeViewProps> = ({
       (r) => r.verification_status === 'needs_overnight_confirmation' || r.verification_status === 'rejected'
     ).length;
 
-    // Fallback logic for historical months if dailyRecords are empty (only for default demo employees)
-    if (empRecords.length === 0) {
-      const DEFAULT_DEMO_IDS = ['emp-1', 'emp-2', 'emp-3', 'E001', 'E002', 'E003'];
-      const isDemoEmp = DEFAULT_DEMO_IDS.includes(emp.id) || DEFAULT_DEMO_IDS.includes(emp.employee_id || '');
-      if (isDemoEmp) {
-        if (yearMonth === '2026-07') {
-          const mockMap: Record<string, number> = {
-            'E001': 263 * 60 + 14,
-            'emp-1': 263 * 60 + 14,
-            'E002': 215 * 60 + 30,
-            'emp-2': 215 * 60 + 30,
-            'E003': 198 * 60 + 45,
-            'emp-3': 198 * 60 + 45,
-          };
-          totalMinutesSum = mockMap[emp.id] || mockMap[emp.employee_id || ''] || 0;
-        } else if (yearMonth === '2026-06') {
-          const mockMap: Record<string, number> = {
-            'E001': 251 * 60 + 32,
-            'emp-1': 251 * 60 + 32,
-            'E002': 208 * 60 + 10,
-            'emp-2': 208 * 60 + 10,
-            'E003': 185 * 60 + 20,
-            'emp-3': 185 * 60 + 20,
-          };
-          totalMinutesSum = mockMap[emp.id] || mockMap[emp.employee_id || ''] || 0;
-        }
-      }
-    }
+
 
     const formatted = formatMinutesToHoursAndMinutes(totalMinutesSum);
 

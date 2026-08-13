@@ -102,27 +102,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
         (r) => r.verification_status === 'pending' || r.verification_status === 'needs_overnight_confirmation'
       ).length;
 
-      // Mock sample data for August 2026 ONLY for default demo employees if dailyRecords not yet added
-      if (empRecs.length === 0) {
-        const DEFAULT_DEMO_IDS = ['emp-1', 'emp-2', 'emp-3', 'E001', 'E002', 'E003'];
-        const isDemoEmp = DEFAULT_DEMO_IDS.includes(emp.id) || DEFAULT_DEMO_IDS.includes(emp.employee_id || '');
-        if (selectedYearMonth === '2026-08' && isDemoEmp) {
-          const sampleData: Record<string, { days: number; mins: number; pending: number }> = {
-            'E001': { days: 30, mins: 278 * 60 + 26, pending: 0 },
-            'emp-1': { days: 30, mins: 278 * 60 + 26, pending: 0 },
-            'E002': { days: 26, mins: 221 * 60 + 40, pending: 2 },
-            'emp-2': { days: 26, mins: 221 * 60 + 40, pending: 2 },
-            'E003': { days: 25, mins: 209 * 60 + 12, pending: 0 },
-            'emp-3': { days: 25, mins: 209 * 60 + 12, pending: 0 },
-          };
-          const smp = sampleData[emp.id] || sampleData[emp.employee_id || ''];
-          if (smp) {
-            attendanceDays = smp.days;
-            totalMins = smp.mins;
-            pendingCount = smp.pending;
-          }
-        }
-      }
+
 
       return {
         employee: emp,

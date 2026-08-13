@@ -263,11 +263,10 @@ export function generateStoreSummary(
     if (emp.employee_id) empLookupMap.set(emp.employee_id, emp);
     if (emp.employeeNo) empLookupMap.set(emp.employeeNo, emp);
     
-    // Support matching legacy mock IDs (emp-1, emp-2, emp-3) ONLY for initial default employees
-    if (index < 3) {
-      empLookupMap.set(`emp-${index + 1}`, emp);
-      empLookupMap.set(`${index + 1}`, emp);
-    }
+    // Support matching legacy mock IDs (emp-1, emp-2, emp-3) ONLY for exact default demo employees
+    if (emp.id === 'E001' || emp.employee_id === 'E001') empLookupMap.set('emp-1', emp);
+    if (emp.id === 'E002' || emp.employee_id === 'E002') empLookupMap.set('emp-2', emp);
+    if (emp.id === 'E003' || emp.employee_id === 'E003') empLookupMap.set('emp-3', emp);
   });
 
   const filteredShifts = shifts.filter((s) => s.date >= startDate && s.date <= endDate);
