@@ -45,7 +45,7 @@ interface EmployeeViewProps {
   onAddEmployee: (emp: Omit<Employee, 'id' | 'createdAt'>) => void;
   onUpdateEmployee: (emp: Employee) => void;
   onDeleteEmployee: (empId: string) => void;
-  onUpdateDailyRecord?: (updatedRecord: DailyWorkRecord) => void;
+  onUpdateDailyRecord?: (updatedRecord: DailyWorkRecord) => void | Promise<void>;
   onSyncEmployees?: () => Promise<void>;
 }
 
@@ -400,7 +400,8 @@ export const EmployeeView: React.FC<EmployeeViewProps> = ({
                 onClick={() => {
                   const newRec = calculateDailyWorkRecord({
                     employee_id: selectedEmp.id,
-                    work_date: '2026-08-06',
+                    // 預設今天，實際日期由 Modal 內的日期欄位指定
+                    work_date: new Date().toISOString().split('T')[0],
                     clock_in_1: '09:00',
                     clock_out_1: '18:00',
                     verification_status: 'verified',
@@ -913,11 +914,20 @@ export const EmployeeView: React.FC<EmployeeViewProps> = ({
           employeeName={selectedEmp ? selectedEmp.name : '員工'}
           isOpen={!!selectedDailyRecord}
           onClose={() => setSelectedDailyRecord(null)}
-          onSave={(updatedRec) => {
-            if (onUpdateDailyRecord) {
-              onUpdateDailyRecord(updatedRec);
+          onSave={async (updatedRec) => {
+            if (!onUpdateDailyRecord) {
+              setSelectedDailyRecord(null);
+              return;
             }
-            setSelectedDailyRecord(null);
+            // 必須等待寫入 Google Sheet 完成，失敗時把錯誤顯示出來，不可靜默關閉
+            try {
+              await onUpdateDailyRecord(updatedRec);
+              setSelectedDailyRecord(null);
+              showToast('工時已寫入 Google Sheet', 'success');
+            } catch (err: any) {
+              showToast(err?.message || '工時寫入失敗，請稍後再試', 'error');
+              throw err;
+            }
           }}
         />
       )}

@@ -13,7 +13,7 @@ interface DailyDetailModalProps {
   employeeName: string;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (updatedRecord: DailyWorkRecord) => void;
+  onSave: (updatedRecord: DailyWorkRecord) => void | Promise<void>;
 }
 
 export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
@@ -30,9 +30,12 @@ export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
   const [isOvernight1, setIsOvernight1] = useState(record.is_overnight_1 ?? false);
   const [isOvernight2, setIsOvernight2] = useState(record.is_overnight_2 ?? false);
   const [status, setStatus] = useState(record.verification_status);
+  const [workDate, setWorkDate] = useState(record.work_date);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Sync state when record prop changes
   useEffect(() => {
+    setWorkDate(record.work_date);
     setClockIn1(record.clock_in_1 || '');
     setClockOut1(record.clock_out_1 || '');
     setClockIn2(record.clock_in_2 || '');
@@ -47,6 +50,7 @@ export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
   // Real-time calculation of daily work record in minutes
   const computedRecord = calculateDailyWorkRecord({
     ...record,
+    work_date: workDate,
     clock_in_1: clockIn1,
     clock_out_1: clockOut1,
     clock_in_2: clockIn2,
@@ -66,14 +70,24 @@ export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
     setStatus('verified');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (isSaving) return;
     const finalRec: DailyWorkRecord = {
       ...computedRecord,
+      work_date: workDate,
       verification_status: isOvernightCandidate ? 'needs_overnight_confirmation' : status,
       updated_at: new Date().toISOString(),
     };
-    onSave(finalRec);
-    onClose();
+
+    setIsSaving(true);
+    try {
+      // 等待實際寫入 Google Sheet；成功時由父層關閉 Modal
+      await onSave(finalRec);
+    } catch {
+      // 錯誤已由父層以 Toast 呈現，這裡保留 Modal 讓使用者修正後重試
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -90,7 +104,7 @@ export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
                 每日工時明細與核對
               </h3>
               <p className="text-xs text-slate-500 font-medium">
-                {employeeName} · {record.work_date} ({formatDateCN(record.work_date)})
+                {employeeName} · {workDate} ({formatDateCN(workDate)})
               </p>
             </div>
           </div>
@@ -104,6 +118,24 @@ export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
 
         {/* Form Body */}
         <div className="p-5 overflow-y-auto space-y-4">
+          {/* 工作日期（補登過往工時時必須可以指定） */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1.5">
+            <label
+              htmlFor="work-date-input"
+              className="text-xs font-black text-slate-700 flex items-center space-x-1.5"
+            >
+              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <span>工作日期</span>
+            </label>
+            <input
+              id="work-date-input"
+              type="date"
+              value={workDate}
+              onChange={(e) => setWorkDate(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
           {/* Overnight Warning Alert */}
           {isOvernightCandidate && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex items-start space-x-3 text-xs">
@@ -267,10 +299,11 @@ export const DailyDetailModal: React.FC<DailyDetailModalProps> = ({
             <button
               type="button"
               onClick={handleSave}
-              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs active:scale-95 flex items-center space-x-1.5 transition"
+              disabled={isSaving}
+              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-xs active:scale-95 flex items-center space-x-1.5 transition"
             >
               <Save className="w-4 h-4" />
-              <span>儲存工時修改</span>
+              <span>{isSaving ? '寫入 Google Sheet 中…' : '儲存工時修改'}</span>
             </button>
           </div>
         </div>
