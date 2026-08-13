@@ -325,6 +325,29 @@ export default function App() {
     });
   };
 
+  // Handle Google SSO Login Success (TASK 1)
+  const handleGoogleLoginSuccess = async (user: GoogleUser) => {
+    // 1. OAuth Access Token Validation (TASK 6)
+    if (!user || !user.accessToken) {
+      console.warn('[Google Login] OAUTH_ACCESS_TOKEN_MISSING');
+      setGoogleUser(user || null);
+      setIsGoogleLoginOpen(false);
+      return;
+    }
+
+    // 2. Set Access Token into Memory-only Global Service (TASK 1 & TASK 2)
+    GoogleAuthService.setAccessToken(user.accessToken);
+
+    // 3. Update React User State
+    setGoogleUser(user);
+
+    // 4. Close Login Modal
+    setIsGoogleLoginOpen(false);
+
+    // 5. Trigger Server Sheet Verification & Data Loading (TASK 1 & TASK 3 & TASK 4)
+    await loadDataFromService();
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-600 selection:text-white flex flex-col">
       {/* Top Header */}
@@ -334,8 +357,10 @@ export default function App() {
         googleUser={googleUser}
         onOpenGoogleLogin={() => setIsGoogleLoginOpen(true)}
         onGoogleLogout={() => {
+          GoogleAuthService.clearAccessToken();
           GoogleAuthManager.logout();
           setGoogleUser(null);
+          loadDataFromService();
         }}
         onOpenAddShift={() => handleOpenAddShift()}
         onOpenAddEmployee={() => setIsAddEmployeeModalOpen(true)}
@@ -473,9 +498,8 @@ export default function App() {
       <GoogleLoginModal
         isOpen={isGoogleLoginOpen}
         onClose={() => setIsGoogleLoginOpen(false)}
-        onLoginSuccess={(user) => setGoogleUser(user)}
+        onLoginSuccess={handleGoogleLoginSuccess}
       />
     </div>
   );
 }
-
