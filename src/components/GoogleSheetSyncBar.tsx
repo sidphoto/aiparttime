@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { FileSpreadsheet, RefreshCw, Link as LinkIcon, Check, AlertCircle, Sparkles, ExternalLink } from 'lucide-react';
+import React, { useState } from 'react';
+import { FileSpreadsheet, RefreshCw, Link as LinkIcon, Check, AlertCircle, Sparkles, ExternalLink, PlusCircle } from 'lucide-react';
 import { GoogleUser } from '../services/googleAuth';
 
 interface GoogleSheetSyncBarProps {
@@ -18,6 +18,7 @@ export const GoogleSheetSyncBar: React.FC<GoogleSheetSyncBarProps> = ({
     () => localStorage.getItem('user_g_spreadsheet_id') || null
   );
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [isEditing, setIsEditing] = useState(!activeSpreadsheetId);
 
@@ -33,6 +34,113 @@ export const GoogleSheetSyncBar: React.FC<GoogleSheetSyncBarProps> = ({
       return trimmed;
     }
     return null;
+  };
+
+  // Create a brand new Google Sheet with standardized headers
+  const handleCreateNewSheet = async () => {
+    if (!googleUser) {
+      onOpenGoogleLogin();
+      return;
+    }
+
+    const token = googleUser.accessToken || localStorage.getItem('g_sheets_token');
+    if (!token) {
+      onOpenGoogleLogin();
+      return;
+    }
+
+    setIsCreating(true);
+    setStatusMessage({ type: 'info', text: '正在為您在 Google 雲端硬碟建立「AIPT時數統計_資料庫」...' });
+
+    try {
+      // 1. Create Spreadsheet with employees and work_records sheets
+      const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          properties: { title: 'AIPT時數統計_資料庫' },
+          sheets: [
+            { properties: { title: 'employees' } },
+            { properties: { title: 'work_records' } },
+          ],
+        }),
+      });
+
+      if (!createRes.ok) {
+        const errJson = await createRes.json();
+        throw new Error(`無法建立試算表: ${errJson.error?.message || createRes.statusText}`);
+      }
+
+      const createdData = await createRes.json();
+      const newSpreadsheetId = createdData.spreadsheetId;
+      const fullUrl = `https://docs.google.com/spreadsheets/d/${newSpreadsheetId}/edit`;
+
+      // 2. Initialize Header Columns in both tabs
+      // employees headers (7 columns)
+      const empHeaders = ['employee_id', 'store_id', 'name', 'status', 'hire_date', 'note', 'created_at'];
+      // work_records headers (14 columns)
+      const workHeaders = [
+        'record_id',
+        'employee_id',
+        'work_date',
+        'clock_in_1',
+        'clock_out_1',
+        'clock_in_2',
+        'clock_out_2',
+        'period_1_minutes',
+        'period_2_minutes',
+        'total_minutes',
+        'verification_status',
+        'source',
+        'created_at',
+        'updated_at',
+      ];
+
+      await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${newSpreadsheetId}/values/employees!A1:G1?valueInputOption=RAW`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ values: [empHeaders] }),
+        }
+      );
+
+      await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${newSpreadsheetId}/values/work_records!A1:N1?valueInputOption=RAW`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ values: [workHeaders] }),
+        }
+      );
+
+      // Save to localStorage
+      localStorage.setItem('user_g_sheet_url_id', fullUrl);
+      localStorage.setItem('user_g_spreadsheet_id', newSpreadsheetId);
+      setSheetInput(fullUrl);
+      setActiveSpreadsheetId(newSpreadsheetId);
+      setIsEditing(false);
+
+      setStatusMessage({ type: 'success', text: `✨ 成功建立新試算表！已寫入 employees (7個欄位) 與 work_records (14個欄位)` });
+
+      if (onSyncCompleted) {
+        onSyncCompleted();
+      }
+    } catch (err: any) {
+      console.error('Create Sheet error:', err);
+      setStatusMessage({ type: 'error', text: err.message || '建立試算表失敗，請確認授權權限。' });
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const handleSaveAndSync = async (e?: React.FormEvent) => {
@@ -53,15 +161,12 @@ export const GoogleSheetSyncBar: React.FC<GoogleSheetSyncBarProps> = ({
     setStatusMessage({ type: 'info', text: '正在存取您的 Google Sheet 資料表...' });
 
     try {
-      // Store user spreadsheet ID
       localStorage.setItem('user_g_sheet_url_id', sheetInput.trim());
       localStorage.setItem('user_g_spreadsheet_id', parsedId);
       setActiveSpreadsheetId(parsedId);
 
-      // Fetch employee & work records using user's access token
       const token = googleUser.accessToken || localStorage.getItem('g_sheets_token');
       if (token) {
-        // Fetch employees tab metadata
         const res = await fetch(
           `https://sheets.googleapis.com/v4/spreadsheets/${parsedId}/values/employees!A1:I100?key=`,
           {
@@ -110,7 +215,7 @@ export const GoogleSheetSyncBar: React.FC<GoogleSheetSyncBarProps> = ({
                 </span>
               )}
             </h3>
-            <p className="text-[11px] text-blue-200/80">抓取並即時連線您雲端硬碟中的考勤試算表</p>
+            <p className="text-[11px] text-blue-200/80">自動寫入欄位架構與即時連線雲端資料庫</p>
           </div>
         </div>
 
@@ -155,33 +260,49 @@ export const GoogleSheetSyncBar: React.FC<GoogleSheetSyncBarProps> = ({
         </div>
       )}
 
-      {/* Input / Connection Form */}
+      {/* Input / Connection Form & Create Button */}
       {googleUser && (isEditing || !activeSpreadsheetId) && (
-        <form onSubmit={handleSaveAndSync} className="space-y-2 pt-1">
-          <label className="text-[11px] font-bold text-blue-200 block">
-            貼上您的 Google Sheet 網址或 試算表 ID：
-          </label>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <LinkIcon className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                value={sheetInput}
-                onChange={(e) => setSheetInput(e.target.value)}
-                placeholder="https://docs.google.com/spreadsheets/d/1XAl.../edit"
-                className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-blue-200/50 focus:outline-none focus:ring-2 focus:ring-blue-400"
-              />
+        <div className="space-y-3 pt-1">
+          <form onSubmit={handleSaveAndSync} className="space-y-2">
+            <label className="text-[11px] font-bold text-blue-200 block">
+              貼上您的 Google Sheet 網址或 試算表 ID：
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <LinkIcon className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={sheetInput}
+                  onChange={(e) => setSheetInput(e.target.value)}
+                  placeholder="https://docs.google.com/spreadsheets/d/1XAl.../edit"
+                  className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-blue-200/50 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isSyncing || !sheetInput.trim()}
+                className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl shadow-xs transition active:scale-95 flex items-center space-x-1 shrink-0"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? '同步中' : '連線並抓取'}</span>
+              </button>
             </div>
+          </form>
+
+          {/* One-Click Create New Sheet Option */}
+          <div className="border-t border-white/10 pt-2 flex items-center justify-between">
+            <span className="text-[11px] font-bold text-blue-200">還沒有試算表？</span>
             <button
-              type="submit"
-              disabled={isSyncing || !sheetInput.trim()}
-              className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl shadow-xs transition active:scale-95 flex items-center space-x-1 shrink-0"
+              type="button"
+              onClick={handleCreateNewSheet}
+              disabled={isCreating}
+              className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs rounded-xl shadow-xs transition active:scale-95 flex items-center space-x-1"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? '同步中' : '連線並抓取'}</span>
+              <PlusCircle className={`w-3.5 h-3.5 ${isCreating ? 'animate-spin' : ''}`} />
+              <span>{isCreating ? '自動建檔中...' : '一鍵為我建立新 Sheet (含全欄位)'}</span>
             </button>
           </div>
-        </form>
+        </div>
       )}
 
       {/* Active Connected Spreadsheet Preview */}
