@@ -77,12 +77,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
   const storeSummary = useMemo(() => {
     return generateStoreSummary(
       employees,
-      shifts,
+      dailyRecords,
       period.startDate,
       period.endDate,
       period.label
     );
-  }, [employees, shifts, period]);
+  }, [employees, dailyRecords, period]);
 
   // Monthly Store Stats from dailyRecords
   const monthStoreStats = useMemo(() => {

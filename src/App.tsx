@@ -182,8 +182,8 @@ export default function App() {
   const [selectedMonth, setSelectedMonth] = useState<string>(currentYearMonth);
   const period = getPayCyclePeriod(selectedMonth, settings.payCycleStartDay);
   const storeSummary = useMemo(() => {
-    return generateStoreSummary(employees, shifts, period.startDate, period.endDate, period.label);
-  }, [employees, shifts, period]);
+    return generateStoreSummary(employees, dailyRecords, period.startDate, period.endDate, period.label);
+  }, [employees, dailyRecords, period]);
 
   // Pending timecards count
   const pendingCount = useMemo(() => {

@@ -250,32 +250,36 @@ export function formatHoursAndMinutes(netHours: number): string {
  */
 export function generateStoreSummary(
   employees: Employee[],
-  shifts: ShiftLog[],
+  dailyRecords: DailyWorkRecord[],
   startDate: string,
   endDate: string,
   periodLabel: string
 ): StoreSummary {
-  // Create ID mapping lookup for flexible employee ID matching (e.g. emp-1 -> E001, E001 -> E001)
+  // Create ID mapping lookup for exact employee matching by employee_id/id/employeeNo
   const empLookupMap = new Map<string, Employee>();
   
-  employees.forEach((emp, index) => {
+  employees.forEach((emp) => {
     if (emp.id) empLookupMap.set(emp.id, emp);
     if (emp.employee_id) empLookupMap.set(emp.employee_id, emp);
     if (emp.employeeNo) empLookupMap.set(emp.employeeNo, emp);
-    
-    // Support matching legacy mock IDs (emp-1, emp-2, emp-3) ONLY for exact default demo employees
-    if (emp.id === 'E001' || emp.employee_id === 'E001') empLookupMap.set('emp-1', emp);
-    if (emp.id === 'E002' || emp.employee_id === 'E002') empLookupMap.set('emp-2', emp);
-    if (emp.id === 'E003' || emp.employee_id === 'E003') empLookupMap.set('emp-3', emp);
   });
 
-  const filteredShifts = shifts.filter((s) => s.date >= startDate && s.date <= endDate);
+  // Filter dailyRecords by work_date within range & verification_status === 'verified'
+  const filteredRecords = (dailyRecords || []).filter(
+    (r) =>
+      r.work_date &&
+      r.work_date >= startDate &&
+      r.work_date <= endDate &&
+      r.verification_status === 'verified'
+  );
 
   const empMap = new Map<string, EmployeeSummary>();
 
   // Initialize summary for every active employee
   employees.forEach((emp) => {
-    empMap.set(emp.id || emp.employee_id, {
+    const key = emp.id || emp.employee_id || emp.employeeNo;
+    if (!key) return;
+    empMap.set(key, {
       employee: emp,
       totalShifts: 0,
       totalDays: 0,
@@ -295,15 +299,14 @@ export function generateStoreSummary(
 
   const empDaysWorkedMap = new Map<string, Set<string>>();
 
-  filteredShifts.forEach((shift) => {
-    // Find matching employee or skip if obsolete unmapped shift
-    const matchedEmp = empLookupMap.get(shift.employeeId);
+  filteredRecords.forEach((rec) => {
+    // Find matching employee by employee_id (TASK 3: Join via employee_id, no name guessing)
+    const matchedEmp = empLookupMap.get(rec.employee_id);
     if (!matchedEmp) {
-      // Skip shifts that do not belong to any current store employee
       return;
     }
 
-    const targetEmpId = matchedEmp.id || matchedEmp.employee_id;
+    const targetEmpId = matchedEmp.id || matchedEmp.employee_id || matchedEmp.employeeNo;
     let summary = empMap.get(targetEmpId);
 
     if (!summary) {
@@ -329,20 +332,25 @@ export function generateStoreSummary(
     if (!empDaysWorkedMap.has(targetEmpId)) {
       empDaysWorkedMap.set(targetEmpId, new Set());
     }
-    empDaysWorkedMap.get(targetEmpId)!.add(shift.date);
+    empDaysWorkedMap.get(targetEmpId)!.add(rec.work_date);
+
+    // Sum total_minutes from DailyWorkRecord (TASK 5: SUM total_minutes)
+    const mins = rec.total_minutes || 0;
+    const hours = mins / 60;
 
     summary.totalShifts += 1;
-    summary.regularHours += shift.regularHours;
-    summary.overtimeHours1 += shift.overtimeHours1;
-    summary.overtimeHours2 += shift.overtimeHours2;
-    summary.totalNetHours += shift.totalNetHours;
-    summary.totalBreakMinutes += shift.breakMinutes;
-    summary.regularPay += shift.regularPay;
-    summary.overtimePay += shift.overtimePay;
-    summary.totalPay += shift.totalPay;
+    summary.totalNetHours += hours;
+    summary.regularHours += Math.min(8, hours);
+    if (hours > 8) {
+      summary.overtimeHours1 += Math.min(2, hours - 8);
+      if (hours > 10) {
+        summary.overtimeHours2 += hours - 10;
+      }
+    }
+    summary.totalPay += Math.round(hours * (matchedEmp.hourlyRate || 195));
   });
 
-  // Calculate distinct days worked and hours/minutes
+  // Format distinct days and hours/minutes for each employee
   empMap.forEach((summary, empId) => {
     const daysSet = empDaysWorkedMap.get(empId);
     summary.totalDays = daysSet ? daysSet.size : 0;
