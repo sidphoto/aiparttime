@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FileSpreadsheet, RefreshCw, Link as LinkIcon, Check, AlertCircle, Sparkles, ExternalLink, PlusCircle } from 'lucide-react';
 import { GoogleUser } from '../services/googleAuth';
 import { GoogleAuthService } from '../services/googleSheetsClient';
+import { dataServiceManager } from '../services/dataServiceManager';
 
 interface GoogleSheetSyncBarProps {
   googleUser: GoogleUser | null;
@@ -222,9 +223,13 @@ export const GoogleSheetSyncBar: React.FC<GoogleSheetSyncBarProps> = ({
           <div>
             <h3 className="font-extrabold text-sm tracking-tight flex items-center gap-1.5">
               <span>個人 Google Sheet 資料同步</span>
-              {googleUser && (
+              {dataServiceManager.providerName === 'google_sheets' && googleUser ? (
                 <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-400/20 text-emerald-300 rounded-full border border-emerald-400/30">
-                  SSO 已授權
+                  Google Sheet 已連線
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-400/20 text-amber-300 rounded-full border border-amber-400/30">
+                  未連接 Google Sheet
                 </span>
               )}
             </h3>

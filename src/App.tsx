@@ -21,6 +21,7 @@ import { AddEmployeeModal } from './components/AddEmployeeModal';
 import { GoogleSheetSyncBar } from './components/GoogleSheetSyncBar';
 import { GoogleLoginModal } from './components/GoogleLoginModal';
 import { GoogleUser, GoogleAuthManager } from './services/googleAuth';
+import { GoogleAuthService } from './services/googleSheetsClient';
 import { dataServiceManager } from './services/dataServiceManager';
 import { generateStoreSummary, getPayCyclePeriod } from './utils/calc';
 
@@ -42,19 +43,13 @@ export default function App() {
   });
 
   const [employees, setEmployees] = useState<Employee[]>(() => {
-    const saved = localStorage.getItem('store_employees');
-    if (!saved) return [];
+    // Purge legacy local storage employees to prevent stale local data as formal employees
     try {
-      const parsed: Employee[] = JSON.parse(saved);
-      const uniqueMap = new Map<string, Employee>();
-      parsed.forEach((e) => {
-        const key = e.id || e.employee_id || e.employeeNo;
-        if (key) uniqueMap.set(key, e);
-      });
-      return Array.from(uniqueMap.values());
+      localStorage.removeItem('store_employees');
     } catch {
-      return [];
+      // ignore
     }
+    return [];
   });
 
   // Auto-purge legacy mock data on update once
@@ -65,6 +60,7 @@ export default function App() {
       localStorage.removeItem('store_daily_records');
       localStorage.removeItem('store_work_records');
       localStorage.removeItem('store_recognition_records');
+      localStorage.removeItem('store_employees');
       localStorage.setItem('store_data_v3_purged', 'true');
       setShifts([]);
       setTimecards([]);
@@ -108,10 +104,31 @@ export default function App() {
   const [editingShift, setEditingShift] = useState<ShiftLog | null>(null);
   const [defaultShiftDate, setDefaultShiftDate] = useState<string | undefined>(undefined);
 
-  // Async Data Service Initialization & Data Fetching
+  // Async Data Service Initialization & Data Fetching (TASK 2 & TASK 4)
   const loadDataFromService = useCallback(async () => {
+    const token = GoogleAuthService.getAccessToken();
+    if (!token) {
+      // Memory Token absent -> Reset provider to local/disconnected and clear employees
+      dataServiceManager.setProvider('local');
+      setEmployees([]);
+      return;
+    }
+
     try {
       await dataServiceManager.initialize();
+
+      // Test Google Sheets API access via GET /api/employees (Server Authorization & Access PASS)
+      const emps = await dataServiceManager.getEmployeesFromSheetOnly();
+
+      // Switch Provider ONLY after Google Sheet access is verified!
+      dataServiceManager.setProvider('google_sheets');
+
+      const uniqueMap = new Map<string, Employee>();
+      (emps || []).forEach((e) => {
+        const key = e.id || e.employee_id || e.employeeNo;
+        if (key) uniqueMap.set(key, e);
+      });
+      setEmployees(Array.from(uniqueMap.values()));
 
       // Fetch Store Info (S001 -> 參陸河粉)
       const storeInfo = await dataServiceManager.getStore('S001');
@@ -119,25 +136,15 @@ export default function App() {
         setSettings((prev) => ({ ...prev, storeName: storeInfo.store_name }));
       }
 
-      const emps = await dataServiceManager.getEmployees();
-      if (emps && emps.length > 0) {
-        const uniqueMap = new Map<string, Employee>();
-        emps.forEach((e) => {
-          const key = e.id || e.employee_id || e.employeeNo;
-          if (key) uniqueMap.set(key, e);
-        });
-        const uniqueEmps = Array.from(uniqueMap.values());
-        setEmployees(uniqueEmps);
-        localStorage.setItem('store_employees', JSON.stringify(uniqueEmps));
-      }
-
       const workRecs = await dataServiceManager.getWorkRecords();
       if (workRecs && workRecs.length > 0) setDailyRecords(workRecs);
 
       const recogs = await dataServiceManager.getRecognitionRecords();
       if (recogs && recogs.length > 0) setTimecards(recogs);
-    } catch (err) {
-      console.error('Failed to load data from data service:', err);
+    } catch (err: any) {
+      console.warn('Google Sheet connection or fetch failed, provider remains local:', err?.message || err);
+      dataServiceManager.setProvider('local');
+      setEmployees([]);
     }
   }, []);
 
@@ -149,10 +156,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('store_settings', JSON.stringify(settings));
   }, [settings]);
-
-  useEffect(() => {
-    localStorage.setItem('store_employees', JSON.stringify(employees));
-  }, [employees]);
 
   useEffect(() => {
     localStorage.setItem('store_shifts', JSON.stringify(shifts));
