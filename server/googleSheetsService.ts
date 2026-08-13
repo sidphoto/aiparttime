@@ -28,6 +28,31 @@ export class CustomApiError extends Error {
   }
 }
 
+/** 正式資料庫試算表名稱（檔案未命名時由 Server 主動補上） */
+export const SPREADSHEET_TITLE = 'AIPT時數統計_資料庫';
+
+/** Google 預設的「未命名」檔名樣式，只有符合這些樣式才會被改名 */
+const UNTITLED_TITLE_PATTERNS = [
+  /^$/,
+  /^untitled spreadsheet$/i,
+  /^無標題試算表$/,
+  /^未命名的?試算表$/,
+];
+
+const STORES_HEADERS = ['store_id', 'store_name', 'owner_name', 'status', 'created_at'];
+
+const EMPLOYEES_HEADERS = [
+  'employee_id',
+  'store_id',
+  'name',
+  'status',
+  'hire_date',
+  'note',
+  'created_at',
+  'role',
+  'hourly_rate',
+];
+
 /**
   * Safely retrieves GOOGLE_SHEETS_SPREADSHEET_ID from server environment variables.
   * Throws 500 CONFIG_MISSING if not set.
@@ -126,6 +151,101 @@ export async function ensureSheetTab(
       }
     );
   }
+}
+
+/**
+ * 連線時主動整備唯一的正式試算表：
+ * 1. 檔案仍是 Google 預設「未命名」時，改名為 SPREADSHEET_TITLE
+ * 2. 補齊 stores / employees / work_records 三個分頁與各自表頭
+ *
+ * 全程只操作 GOOGLE_SHEETS_SPREADSHEET_ID 指向的那一份檔案，
+ * 不呼叫 spreadsheets.create，也不搜尋 Drive 另找檔案。
+ */
+export async function ensureSpreadsheetStructure(authHeader?: string): Promise<{
+  spreadsheet_id: string;
+  spreadsheet_title: string;
+  renamed: boolean;
+  sheets: string[];
+  created_sheets: string[];
+}> {
+  const spreadsheetId = getSpreadsheetId();
+  const token = authHeader?.replace('Bearer ', '') || process.env.GOOGLE_OAUTH_TOKEN;
+  if (!token) {
+    throw new CustomApiError(401, '未提供 Google Access Token，請先完成授權。', 'UNAUTHORIZED');
+  }
+
+  const metaRes = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title,sheets.properties.title`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+
+  if (!metaRes.ok) {
+    if (metaRes.status === 401) {
+      throw new CustomApiError(401, 'Google 授權已失效，請重新連線 Google Sheet。', 'UNAUTHORIZED');
+    }
+    if (metaRes.status === 403) {
+      throw new CustomApiError(403, 'Google Sheet 存取權限不足，請確認 OAuth 帳號編輯權限。', 'FORBIDDEN');
+    }
+    const detail = await metaRes.text().catch(() => '');
+    throw new CustomApiError(metaRes.status, `無法讀取 Google Sheet 結構 (${detail.slice(0, 80)})。`);
+  }
+
+  const meta = (await metaRes.json()) as any;
+  const currentTitle: string = meta?.properties?.title || '';
+  const existingTitles: string[] = (meta.sheets || [])
+    .map((s: any) => s?.properties?.title)
+    .filter(Boolean);
+
+  // 1. 檔案改名（僅限預設未命名，不覆蓋使用者自訂的名稱）
+  let renamed = false;
+  if (UNTITLED_TITLE_PATTERNS.some((p) => p.test(currentTitle.trim()))) {
+    const renameRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [
+            {
+              updateSpreadsheetProperties: {
+                properties: { title: SPREADSHEET_TITLE },
+                fields: 'title',
+              },
+            },
+          ],
+        }),
+      }
+    );
+    if (renameRes.ok) {
+      renamed = true;
+      console.log(`[GoogleSheetsService] 試算表已改名為「${SPREADSHEET_TITLE}」。`);
+    } else {
+      console.warn('[GoogleSheetsService] 試算表改名失敗，續行分頁整備。');
+    }
+  }
+
+  // 2. 補齊必要分頁與表頭
+  const requiredTabs: Array<[string, string[]]> = [
+    ['stores', STORES_HEADERS],
+    ['employees', EMPLOYEES_HEADERS],
+    ['work_records', WORK_RECORDS_HEADERS],
+  ];
+
+  const createdSheets: string[] = [];
+  for (const [sheetName, headers] of requiredTabs) {
+    if (!existingTitles.includes(sheetName)) {
+      createdSheets.push(sheetName);
+    }
+    await ensureSheetTab(sheetName, headers, token);
+  }
+
+  return {
+    spreadsheet_id: spreadsheetId,
+    spreadsheet_title: renamed ? SPREADSHEET_TITLE : currentTitle,
+    renamed,
+    sheets: Array.from(new Set([...existingTitles, ...createdSheets])),
+    created_sheets: createdSheets,
+  };
 }
 
 /**

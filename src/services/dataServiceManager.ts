@@ -44,6 +44,13 @@ export class DataServiceManager implements IDataService {
   }
 
   /**
+   * 連線時整備正式試算表（檔名 + 所有分頁與表頭）
+   */
+  async bootstrapSpreadsheet() {
+    return await this.sheetsService.bootstrapSpreadsheet();
+  }
+
+  /**
    * Helper to verify Google Sheets connection & fetch employees directly
    */
   async getEmployeesFromSheetOnly() {

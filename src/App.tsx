@@ -155,6 +155,12 @@ export default function App() {
     try {
       await dataServiceManager.initialize();
 
+      // 先整備正式試算表：補檔名、補齊所有分頁與表頭，之後的讀寫才有對象
+      const bootstrap = await dataServiceManager.bootstrapSpreadsheet();
+      if (bootstrap?.created_sheets?.length) {
+        console.log('[Sheet Bootstrap] 已建立分頁:', bootstrap.created_sheets.join(', '));
+      }
+
       // Test Google Sheets API access via GET /api/employees (Server Authorization & Access PASS)
       const emps = await dataServiceManager.getEmployeesFromSheetOnly();
 

@@ -10,6 +10,7 @@ import {
   getWorkRecordsFromSheet,
   saveWorkRecordToSheet,
   getSpreadsheetId,
+  ensureSpreadsheetStructure,
 } from "./googleSheetsService.js";
 
 dotenv.config();
@@ -141,6 +142,16 @@ const requireAuthorizedGoogleUser = async (
 // ==========================================
 // STORE API ENDPOINTS
 // ==========================================
+// 連線時整備唯一正式試算表：補檔名 + 補齊所有分頁與表頭
+app.post("/api/sheet/bootstrap", requireAuthorizedGoogleUser, async (req, res) => {
+  try {
+    const result = await ensureSpreadsheetStructure(req.headers.authorization);
+    return res.json(result);
+  } catch (error: any) {
+    return handleRouteError(res, error);
+  }
+});
+
 app.get("/api/stores/:id", requireAuthorizedGoogleUser, async (req, res) => {
   try {
     const authHeader = req.headers.authorization;

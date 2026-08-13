@@ -64,6 +64,21 @@ export class GoogleSheetsDataService implements IDataService {
     }
   }
 
+  /**
+   * 連線時整備正式試算表：補檔名 + 補齊 stores / employees / work_records 分頁與表頭
+   */
+  async bootstrapSpreadsheet(): Promise<{ spreadsheet_title?: string; created_sheets?: string[] }> {
+    const res = await this.fetchWithRetry('/api/sheet/bootstrap', { method: 'POST' });
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new ApiRequestError(
+        errJson.message || errJson.error || `Google Sheet 整備失敗 (HTTP ${res.status})`,
+        res.status
+      );
+    }
+    return await res.json().catch(() => ({}));
+  }
+
   async syncEmployees(): Promise<boolean> {
     if (!googleSheetsClient.isConnected()) return false;
     try {
