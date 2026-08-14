@@ -438,12 +438,16 @@ app.post(OCR_ROUTE, requireAuthorizedGoogleUser, ocrRateLimiter, async (req, res
         headers["cf-aig-authorization"] = `Bearer ${gatewayToken.trim()}`;
       }
 
+      // 推理強度：未設定則採模型預設（medium）。可選 none / minimal / low / medium / high / xhigh / max
+      const reasoningEffort = process.env.OPENAI_REASONING_EFFORT?.trim();
+
       const upstream = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers,
         body: JSON.stringify({
           model,
           response_format: { type: "json_object" },
+          ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
           messages: [
             {
               role: "user",
