@@ -104,21 +104,27 @@ const ipRateLimiter = createRateLimiter({
   message: "請求過於頻繁，請稍後再試。",
 });
 
+// 節流身分一律使用 Google 驗證後的 profile.sub（穩定且不可變的帳號識別碼）。
+// 不使用 email（可變、屬個資）、不使用 Access Token、不使用 Authorization Header。
+// sub 不存在時才退回來源 IP。
+const rateLimitIdentity = (req: express.Request): string =>
+  (req as any).googleUser?.sub || getClientIp(req);
+
 // 通過驗證後以帳號節流，防止合法帳號或外洩 Token 被自動化程式濫用
-const identityRateLimiter = createRateLimiter({
+export const identityRateLimiter = createRateLimiter({
   name: "identity",
   windowMs: 300_000,
   max: 200,
-  keyOf: (req) => (req as any).googleUser?.email || getClientIp(req),
+  keyOf: rateLimitIdentity,
   message: "操作過於頻繁，請稍後再試。",
 });
 
 // OCR 會呼叫 Gemini Vision，成本最高，額度另外從嚴
-const ocrRateLimiter = createRateLimiter({
+export const ocrRateLimiter = createRateLimiter({
   name: "ocr",
   windowMs: 300_000,
   max: 10,
-  keyOf: (req) => (req as any).googleUser?.email || getClientIp(req),
+  keyOf: rateLimitIdentity,
   message: "辨識次數已達上限，請稍後再試。",
 });
 
