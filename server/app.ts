@@ -17,7 +17,120 @@ dotenv.config();
 
 export const app = express();
 
-app.use(express.json({ limit: "20mb" }));
+// ==========================================
+// REQUEST BODY SIZE LIMITS
+// ==========================================
+// 一般 API 只傳結構化欄位，256KB 綽綽有餘；僅 OCR 端點需要容納 Base64 圖片。
+// 全域維持 20MB 會讓每一條 API 都變成大流量攻擊面。
+const OCR_ROUTE = "/api/analyze-timecard";
+const ocrJsonParser = express.json({ limit: "8mb" });
+const standardJsonParser = express.json({ limit: "256kb" });
+
+app.use((req, res, next) => {
+  if (req.path === OCR_ROUTE) return ocrJsonParser(req, res, next);
+  return standardJsonParser(req, res, next);
+});
+
+// Body 超過上限時回傳 JSON 而非 Express 預設 HTML 錯誤頁
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err?.type === "entity.too.large" || err?.status === 413) {
+    return res.status(413).json({
+      error: "PAYLOAD_TOO_LARGE",
+      message: "上傳內容過大，請縮小圖片後再試。",
+    });
+  }
+  return next(err);
+});
+
+// ==========================================
+// RATE LIMITING
+// ==========================================
+// 記憶體滑動視窗。注意：Vercel Serverless 每個執行個體各自持有這份狀態，
+// 無法跨執行個體共用，因此屬於「盡力而為」的節流，不是硬性配額。
+// 要做到硬性限制需改用共用儲存（Upstash Redis / Vercel KV）。
+const rateBuckets = new Map<string, number[]>();
+const RATE_BUCKET_SOFT_CAP = 5000;
+
+const pruneRateBuckets = (now: number) => {
+  if (rateBuckets.size < RATE_BUCKET_SOFT_CAP) return;
+  for (const [key, hits] of rateBuckets) {
+    if (hits.length === 0 || now - hits[hits.length - 1] > 600_000) {
+      rateBuckets.delete(key);
+    }
+  }
+};
+
+const getClientIp = (req: express.Request): string => {
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return forwarded || req.socket?.remoteAddress || "unknown";
+};
+
+const createRateLimiter = (opts: {
+  name: string;
+  windowMs: number;
+  max: number;
+  keyOf: (req: express.Request) => string;
+  message: string;
+}) => {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const now = Date.now();
+    const key = `${opts.name}:${opts.keyOf(req)}`;
+    const hits = (rateBuckets.get(key) || []).filter((t) => now - t < opts.windowMs);
+
+    if (hits.length >= opts.max) {
+      rateBuckets.set(key, hits);
+      const retryAfterSeconds = Math.max(1, Math.ceil((opts.windowMs - (now - hits[0])) / 1000));
+      res.setHeader("Retry-After", String(retryAfterSeconds));
+      return res.status(429).json({
+        error: "RATE_LIMITED",
+        message: opts.message,
+        retry_after_seconds: retryAfterSeconds,
+      });
+    }
+
+    hits.push(now);
+    rateBuckets.set(key, hits);
+    pruneRateBuckets(now);
+    return next();
+  };
+};
+
+// 未驗證前以來源 IP 節流，保護 Google UserInfo 驗證本身不被灌爆
+const ipRateLimiter = createRateLimiter({
+  name: "ip",
+  windowMs: 60_000,
+  max: 120,
+  keyOf: getClientIp,
+  message: "請求過於頻繁，請稍後再試。",
+});
+
+// 通過驗證後以帳號節流，防止合法帳號或外洩 Token 被自動化程式濫用
+const identityRateLimiter = createRateLimiter({
+  name: "identity",
+  windowMs: 300_000,
+  max: 200,
+  keyOf: (req) => (req as any).googleUser?.email || getClientIp(req),
+  message: "操作過於頻繁，請稍後再試。",
+});
+
+// OCR 會呼叫 Gemini Vision，成本最高，額度另外從嚴
+const ocrRateLimiter = createRateLimiter({
+  name: "ocr",
+  windowMs: 300_000,
+  max: 10,
+  keyOf: (req) => (req as any).googleUser?.email || getClientIp(req),
+  message: "辨識次數已達上限，請稍後再試。",
+});
+
+app.use("/api", ipRateLimiter);
+
+/** 遮蔽 Email 供日誌使用：chiateng@example.com -> c******g@example.com */
+const maskEmail = (email: string): string => {
+  const [local, domain] = String(email).split("@");
+  if (!local || !domain) return "***";
+  if (local.length <= 2) return `${local[0]}***@${domain}`;
+  return `${local[0]}${"*".repeat(Math.min(local.length - 2, 6))}${local[local.length - 1]}@${domain}`;
+};
 
 // Helper to format error responses
 const handleRouteError = (res: express.Response, error: any) => {
@@ -115,21 +228,24 @@ const requireAuthorizedGoogleUser = async (
 
     // TASK 8 — Allowlist Authorization Check
     if (!allowlist.includes(email)) {
-      console.warn(`[Access Denied 403] Verified email ${email} is not in Friends Alpha allowlist`);
+      // 記錄遮蔽後的 Email，避免完整帳號留在 Vercel Log
+      console.warn(`[Access Denied 403] ${maskEmail(email)} is not in Friends Alpha allowlist`);
       return res.status(403).json({
         error: "ACCESS_DENIED",
         message: "此帳號尚未加入 Friends Alpha 測試名單",
       });
     }
 
+    // 不保留 Access Token 副本：各路由一律直接讀 req.headers.authorization，
+    // 多存一份等於無謂擴大敏感憑證的暴露面
     (req as any).googleUser = {
       email,
       name: profile.name || email,
       sub: profile.sub,
-      token,
     };
 
-    next();
+    // 通過身分驗證後才做帳號層級節流（此時才知道是誰）
+    return identityRateLimiter(req, res, next);
   } catch (err: any) {
     console.error("[Auth Verification Error]:", err?.message || err);
     return res.status(401).json({
@@ -254,7 +370,7 @@ app.post("/api/work-records", requireAuthorizedGoogleUser, async (req, res) => {
 // ==========================================
 // REAL OCR / TIMECARD ANALYSIS API (GEMINI VISION)
 // ==========================================
-app.post("/api/analyze-timecard", requireAuthorizedGoogleUser, async (req, res) => {
+app.post(OCR_ROUTE, requireAuthorizedGoogleUser, ocrRateLimiter, async (req, res) => {
   try {
     const { imageBase64, mimeType = "image/jpeg" } = req.body;
 
