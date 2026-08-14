@@ -395,9 +395,11 @@ app.post(OCR_ROUTE, requireAuthorizedGoogleUser, ocrRateLimiter, async (req, res
       });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    const model = process.env.OPENAI_MODEL;
-    if (!apiKey || !apiKey.trim() || !model || !model.trim()) {
+    // 一律去除前後空白：環境變數以互動貼上設定時很容易夾帶換行或空格，
+    // 帶進 Authorization 標頭或 model 欄位會直接造成 401 / 400
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    const model = process.env.OPENAI_MODEL?.trim();
+    if (!apiKey || !model) {
       return res.status(400).json({
         error: "OCR_NOT_CONFIGURED",
         message: "AI 辨識服務目前尚未設定或服務暫時不可用，請稍後再試。",
@@ -406,7 +408,10 @@ app.post(OCR_ROUTE, requireAuthorizedGoogleUser, ocrRateLimiter, async (req, res
 
     // 預設直連 OpenAI；設定 OPENAI_BASE_URL 後改走 Cloudflare AI Gateway
     // 例：https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/openai
-    const baseUrl = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
+    const baseUrl = (process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(
+      /\/+$/,
+      ""
+    );
 
     try {
       const prompt = `您是一位專業的紙本打卡鐘考勤卡 (Timecard) AI 辨識助手。
