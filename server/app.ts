@@ -119,7 +119,7 @@ export const identityRateLimiter = createRateLimiter({
   message: "操作過於頻繁，請稍後再試。",
 });
 
-// OCR 會呼叫 Gemini Vision，成本最高，額度另外從嚴
+// OCR 會呼叫 OpenAI Vision，成本最高，額度另外從嚴
 export const ocrRateLimiter = createRateLimiter({
   name: "ocr",
   windowMs: 300_000,
@@ -374,7 +374,7 @@ app.post("/api/work-records", requireAuthorizedGoogleUser, async (req, res) => {
 });
 
 // ==========================================
-// REAL OCR / TIMECARD ANALYSIS API (GEMINI VISION)
+// REAL OCR / TIMECARD ANALYSIS API (OpenAI Vision via Cloudflare AI Gateway)
 // ==========================================
 app.post(OCR_ROUTE, requireAuthorizedGoogleUser, ocrRateLimiter, async (req, res) => {
   try {
@@ -395,18 +395,20 @@ app.post(OCR_ROUTE, requireAuthorizedGoogleUser, ocrRateLimiter, async (req, res
       });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || !apiKey.trim()) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    const model = process.env.OPENAI_MODEL;
+    if (!apiKey || !apiKey.trim() || !model || !model.trim()) {
       return res.status(400).json({
         error: "OCR_NOT_CONFIGURED",
         message: "AI 辨識服務目前尚未設定或服務暫時不可用，請稍後再試。",
       });
     }
 
-    try {
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({ apiKey });
+    // 預設直連 OpenAI；設定 OPENAI_BASE_URL 後改走 Cloudflare AI Gateway
+    // 例：https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/openai
+    const baseUrl = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
 
+    try {
       const prompt = `您是一位專業的紙本打卡鐘考勤卡 (Timecard) AI 辨識助手。
 請仔細辨識這張考勤卡圖片中的打卡時間，並輸出結構化 JSON。
 範例 JSON 格式：
@@ -426,17 +428,57 @@ app.post(OCR_ROUTE, requireAuthorizedGoogleUser, ocrRateLimiter, async (req, res
 1. 若某天的上班或下班時間看不清楚，請不要猜測，並標記 needs_review: true，且 confidence 給予 0.5 以下低分。
 2. 僅回應標準 JSON，不要輸出額外的 Markdown 或說明。`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: {
-          parts: [
-            { inlineData: { mimeType, data: cleanBase64 } },
-            { text: prompt },
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      };
+      // Cloudflare AI Gateway 若啟用 Authenticated Gateway 才需要這個標頭
+      const gatewayToken = process.env.CF_AIG_TOKEN;
+      if (gatewayToken && gatewayToken.trim()) {
+        headers["cf-aig-authorization"] = `Bearer ${gatewayToken.trim()}`;
+      }
+
+      const upstream = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: prompt },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:${mimeType};base64,${cleanBase64}` },
+                },
+              ],
+            },
           ],
-        },
+        }),
       });
 
-      const text = response.text || "";
+      if (!upstream.ok) {
+        // 只記錄狀態碼與訊息，絕不記錄金鑰或圖片內容
+        const detail = await upstream.text().catch(() => "");
+        console.error(`[OCR Upstream Error] HTTP ${upstream.status}: ${detail.slice(0, 200)}`);
+
+        if (upstream.status === 429) {
+          return res.status(429).json({
+            error: "OCR_RATE_LIMITED",
+            message: "AI 辨識服務暫時繁忙，請稍後再試。",
+          });
+        }
+        return res.status(400).json({
+          error: "OCR_NOT_CONFIGURED",
+          message: "AI 辨識服務目前尚未設定或服務暫時不可用，請稍後再試。",
+        });
+      }
+
+      const completion = (await upstream.json()) as any;
+      const text: string = completion?.choices?.[0]?.message?.content || "";
+
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
@@ -453,7 +495,7 @@ app.post(OCR_ROUTE, requireAuthorizedGoogleUser, ocrRateLimiter, async (req, res
         message: "辨識結果解析失敗，請重新拍攝清晰打卡卡圖片。",
       });
     } catch (aiErr: any) {
-      console.error("[Gemini Vision Error]:", aiErr?.message || aiErr);
+      console.error("[OCR Vision Error]:", aiErr?.message || aiErr);
       return res.status(400).json({
         error: "OCR_NOT_CONFIGURED",
         message: "AI 辨識服務目前尚未設定或服務暫時不可用，請稍後再試。",

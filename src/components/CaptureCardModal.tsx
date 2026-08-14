@@ -20,6 +20,7 @@ import {
 import { Employee, TimecardRecord, RecognitionDailyRecord } from '../types';
 
 import { generateDefault31DayRecognition } from '../utils/verificationEngine';
+import { GoogleAuthService } from '../services/googleSheetsClient';
 
 interface CaptureCardModalProps {
   isOpen: boolean;
@@ -118,9 +119,20 @@ export const CaptureCardModal: React.FC<CaptureCardModalProps> = ({
     setOcrErrorMessage(null);
 
     try {
+      // OCR 端點受 requireAuthorizedGoogleUser 保護，必須帶上記憶體中的 Access Token
+      const token = GoogleAuthService.getAccessToken();
+      if (!token) {
+        setOcrErrorMessage('Google 授權已失效，請先點「重新連線與整理」重新授權後再辨識。');
+        setStep('preview_photo');
+        return;
+      }
+
       const res = await fetch('/api/analyze-timecard', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ imageBase64: photoDataUrl }),
       });
 
