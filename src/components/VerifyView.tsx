@@ -39,7 +39,8 @@ interface VerifyViewProps {
   dailyRecords: DailyWorkRecord[];
   onApproveTimecard: (id: string) => void;
   onSaveApprovedDailyRecords: (recordsToSave: DailyWorkRecord[], timecardId: string) => void;
-  onOpenCapture: () => void;
+  /** 未提供時隱藏拍攝入口（OCR 功能旗標關閉） */
+  onOpenCapture?: () => void;
 }
 
 export const VerifyView: React.FC<VerifyViewProps> = ({
@@ -349,14 +350,16 @@ export const VerifyView: React.FC<VerifyViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <button
-            onClick={onOpenCapture}
-            className="px-3.5 py-2 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800 transition flex items-center gap-1.5 shrink-0"
-          >
-            <RefreshCw className="w-3.5 h-3.5" /> 拍攝/上傳新卡
-          </button>
-        </div>
+        {onOpenCapture && (
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={onOpenCapture}
+              className="px-3.5 py-2 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800 transition flex items-center gap-1.5 shrink-0"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> 拍攝/上傳新卡
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Tabs: Pending Drafts vs Verified Cards */}

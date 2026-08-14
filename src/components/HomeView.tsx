@@ -9,7 +9,8 @@ interface HomeViewProps {
   employees: Employee[];
   timecards: TimecardRecord[];
   storeSummary: StoreSummary;
-  onOpenCapture: () => void;
+  /** 未提供時隱藏拍攝入口（OCR 功能旗標關閉） */
+  onOpenCapture?: () => void;
   onSelectEmployeeDetail: (employeeId: string) => void;
   onNavigateTab: (tab: 'home' | 'employees' | 'verify' | 'reports') => void;
 }
@@ -88,7 +89,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
       </div>
 
-      {/* Prominent Action Button: 拍攝打卡卡 */}
+      {/* Prominent Action Button: 拍攝打卡卡（OCR 旗標關閉時整塊隱藏） */}
+      {onOpenCapture && (
       <div className="relative group">
         <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl blur-xs opacity-75 group-hover:opacity-100 transition duration-200"></div>
         <button
@@ -111,6 +113,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
         </button>
       </div>
+      )}
 
       {/* Key Metric Overview Cards */}
       <div className="grid grid-cols-2 gap-3">

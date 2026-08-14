@@ -33,6 +33,7 @@ import { GoogleAuthService } from './services/googleSheetsClient';
 import { dataServiceManager } from './services/dataServiceManager';
 import { DailyDetailModal } from './components/DailyDetailModal';
 import { generateStoreSummary, getPayCyclePeriod, calculateDailyWorkRecord } from './utils/calc';
+import { OCR_ENABLED } from './config';
 
 export default function App() {
   // LocalStorage state initialization
@@ -471,7 +472,7 @@ export default function App() {
             employees={employees}
             timecards={timecards}
             storeSummary={storeSummary}
-            onOpenCapture={() => setIsCaptureModalOpen(true)}
+            onOpenCapture={OCR_ENABLED ? () => setIsCaptureModalOpen(true) : undefined}
             onSelectEmployeeDetail={() => {
               setActiveTab('employees');
             }}
@@ -501,7 +502,7 @@ export default function App() {
             dailyRecords={dailyRecords}
             onApproveTimecard={handleVerifyTimecard}
             onSaveApprovedDailyRecords={handleSaveApprovedDailyRecords}
-            onOpenCapture={() => setIsCaptureModalOpen(true)}
+            onOpenCapture={OCR_ENABLED ? () => setIsCaptureModalOpen(true) : undefined}
           />
         )}
 
@@ -527,13 +528,15 @@ export default function App() {
       />
 
       {/* Camera Capture Modal */}
-      <CaptureCardModal
-        isOpen={isCaptureModalOpen}
-        onClose={() => setIsCaptureModalOpen(false)}
-        employees={employees}
-        selectedMonth={selectedMonth}
-        onSaveTimecard={handleSaveTimecard}
-      />
+      {OCR_ENABLED && (
+        <CaptureCardModal
+          isOpen={isCaptureModalOpen}
+          onClose={() => setIsCaptureModalOpen(false)}
+          employees={employees}
+          selectedMonth={selectedMonth}
+          onSaveTimecard={handleSaveTimecard}
+        />
+      )}
 
       {/* Single Shift Modal */}
       <ShiftModal
